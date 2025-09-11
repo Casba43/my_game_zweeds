@@ -14,10 +14,13 @@ import 'card_model.dart' as _i2;
 import 'card_played.dart' as _i3;
 import 'game_state.dart' as _i4;
 import 'greeting.dart' as _i5;
+import 'player_state.dart' as _i6;
+import 'package:my_game_client/src/protocol/card_model.dart' as _i7;
 export 'card_model.dart';
 export 'card_played.dart';
 export 'game_state.dart';
 export 'greeting.dart';
+export 'player_state.dart';
 export 'client.dart';
 
 class Protocol extends _i1.SerializationManager {
@@ -45,6 +48,9 @@ class Protocol extends _i1.SerializationManager {
     if (t == _i5.Greeting) {
       return _i5.Greeting.fromJson(data) as T;
     }
+    if (t == _i6.PlayerState) {
+      return _i6.PlayerState.fromJson(data) as T;
+    }
     if (t == _i1.getType<_i2.CardModel?>()) {
       return (data != null ? _i2.CardModel.fromJson(data) : null) as T;
     }
@@ -57,11 +63,18 @@ class Protocol extends _i1.SerializationManager {
     if (t == _i1.getType<_i5.Greeting?>()) {
       return (data != null ? _i5.Greeting.fromJson(data) : null) as T;
     }
+    if (t == _i1.getType<_i6.PlayerState?>()) {
+      return (data != null ? _i6.PlayerState.fromJson(data) : null) as T;
+    }
     if (t == List<String>) {
       return (data as List).map((e) => deserialize<String>(e)).toList() as T;
     }
     if (t == List<_i2.CardModel>) {
       return (data as List).map((e) => deserialize<_i2.CardModel>(e)).toList()
+          as T;
+    }
+    if (t == List<_i7.CardModel>) {
+      return (data as List).map((e) => deserialize<_i7.CardModel>(e)).toList()
           as T;
     }
     return super.deserialize<T>(data, t);
@@ -83,6 +96,9 @@ class Protocol extends _i1.SerializationManager {
     if (data is _i5.Greeting) {
       return 'Greeting';
     }
+    if (data is _i6.PlayerState) {
+      return 'PlayerState';
+    }
     return null;
   }
 
@@ -103,6 +119,9 @@ class Protocol extends _i1.SerializationManager {
     }
     if (dataClassName == 'Greeting') {
       return deserialize<_i5.Greeting>(data['data']);
+    }
+    if (dataClassName == 'PlayerState') {
+      return deserialize<_i6.PlayerState>(data['data']);
     }
     return super.deserializeByClassName(data);
   }

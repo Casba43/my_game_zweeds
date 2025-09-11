@@ -18,6 +18,7 @@ abstract class GameState implements _i1.SerializableModel {
     required this.players,
     required this.currentPlayerId,
     required this.pile,
+    required this.phase,
   });
 
   factory GameState({
@@ -25,6 +26,7 @@ abstract class GameState implements _i1.SerializableModel {
     required List<String> players,
     required String currentPlayerId,
     required List<_i2.CardModel> pile,
+    required String phase,
   }) = _GameStateImpl;
 
   factory GameState.fromJson(Map<String, dynamic> jsonSerialization) {
@@ -37,6 +39,7 @@ abstract class GameState implements _i1.SerializableModel {
       pile: (jsonSerialization['pile'] as List)
           .map((e) => _i2.CardModel.fromJson((e as Map<String, dynamic>)))
           .toList(),
+      phase: jsonSerialization['phase'] as String,
     );
   }
 
@@ -48,6 +51,8 @@ abstract class GameState implements _i1.SerializableModel {
 
   List<_i2.CardModel> pile;
 
+  String phase;
+
   /// Returns a shallow copy of this [GameState]
   /// with some or all fields replaced by the given arguments.
   @_i1.useResult
@@ -56,6 +61,7 @@ abstract class GameState implements _i1.SerializableModel {
     List<String>? players,
     String? currentPlayerId,
     List<_i2.CardModel>? pile,
+    String? phase,
   });
   @override
   Map<String, dynamic> toJson() {
@@ -64,6 +70,7 @@ abstract class GameState implements _i1.SerializableModel {
       'players': players.toJson(),
       'currentPlayerId': currentPlayerId,
       'pile': pile.toJson(valueToJson: (v) => v.toJson()),
+      'phase': phase,
     };
   }
 
@@ -79,11 +86,13 @@ class _GameStateImpl extends GameState {
     required List<String> players,
     required String currentPlayerId,
     required List<_i2.CardModel> pile,
+    required String phase,
   }) : super._(
           gameId: gameId,
           players: players,
           currentPlayerId: currentPlayerId,
           pile: pile,
+          phase: phase,
         );
 
   /// Returns a shallow copy of this [GameState]
@@ -95,12 +104,14 @@ class _GameStateImpl extends GameState {
     List<String>? players,
     String? currentPlayerId,
     List<_i2.CardModel>? pile,
+    String? phase,
   }) {
     return GameState(
       gameId: gameId ?? this.gameId,
       players: players ?? this.players.map((e0) => e0).toList(),
       currentPlayerId: currentPlayerId ?? this.currentPlayerId,
       pile: pile ?? this.pile.map((e0) => e0.copyWith()).toList(),
+      phase: phase ?? this.phase,
     );
   }
 }

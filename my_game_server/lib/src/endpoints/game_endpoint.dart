@@ -1,71 +1,229 @@
 import 'package:serverpod/serverpod.dart';
-
 import '../generated/protocol.dart';
+import 'dart:math';
 
+// -------- Rules (server-side copy) --------
+String _normRank(String r) {
+  r = r.trim().toUpperCase();
+  if (r == '1' || r == 'T') return '10';
+  if (r == 'JOKER') return 'Joker';
+  return r;
+}
+
+const _ranksOrder = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker', 'S'];
+
+const Map<String, List<String>> _ruleSetStandard = {
+  '2': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '3': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '4': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '5': ['2', '3', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '6': ['2', '3', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '7': ['2', '3', '4', '5', '6', '7', 'S'],
+  '8': ['3', '2', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '9': ['3', '2', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
+  '10': ['3', '2', '10', 'J', 'Q', 'K', 'A', 'S'],
+  'J': ['3', '2', 'J', 'Q', 'K', 'A', 'S'],
+  'Q': ['3', '2', 'Q', 'K', 'A', 'S'],
+  'K': ['3', '2', 'K', 'A', 'S'],
+  'A': ['3', '2', 'A', 'S'],
+  'Joker': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+};
+
+bool _canPlayOn({required String top, required String candidate}) {
+  final t = _normRank(top);
+  final c = _normRank(candidate);
+  if (t == 'Joker') return true; // keep matrix if you prefer
+  final allowed = _ruleSetStandard[t];
+  return allowed != null && allowed.contains(c);
+}
+
+// -------- Memory model for a single table --------
+class _TableMem {
+  GameState publicState;
+  final Map<String, PlayerState> playerStates; // per-player
+  final Map<String, List<CardModel>> hiddenReal; // true hidden (server only)
+  final Map<String, List<CardModel>> sixVisible; // temp visible 6 per player
+  List<CardModel> deck;
+  _TableMem(this.publicState, this.playerStates, this.hiddenReal, this.deck) : sixVisible = {};
+}
+
+// -------- Endpoint --------
 class GameEndpoint extends Endpoint {
-  // In-memory rooms (fine for prototype; use DB for production)
-  static final Map<String, GameState> _rooms = {};
+  static final Map<String, _TableMem> _tables = {};
+  static String _chan(String gameId) => 'game-$gameId';
 
-  static String _channel(String gameId) => 'game-$gameId';
-
-  Future<GameState> join(Session session, {required String gameId, required String playerId}) async {
-    var state = _rooms[gameId];
-    if (state == null) {
-      state = GameState(
+  // === Lobby / join ===
+  Future<GameState> join(Session s, {required String gameId, required String playerId}) async {
+    var T = _tables[gameId];
+    if (T == null) {
+      final st = GameState(
         gameId: gameId,
         players: [playerId],
         currentPlayerId: playerId,
         pile: [],
+        phase: 'lobby',
       );
-      _rooms[gameId] = state;
+      T = _tables[gameId] = _TableMem(st, {}, {}, _buildDeck()..shuffle(Random()));
     } else {
-      if (!state.players.contains(playerId)) {
-        state.players = [...state.players, playerId];
+      if (!T.publicState.players.contains(playerId)) {
+        T.publicState.players = [...T.publicState.players, playerId];
       }
     }
-
-    // Broadcast full state so everyone syncs
-    session.messages.postMessage(_channel(gameId), state);
-    return state;
+    s.messages.postMessage(_chan(gameId), T.publicState);
+    return T.publicState;
   }
 
-  Future<void> playCard(Session session,
-      {required String gameId, required String playerId, required CardModel card}) async {
-    final state = _rooms[gameId];
-    if (state == null) throw Exception('Game not found');
-
-    // turn check
-    if (state.currentPlayerId != playerId) {
-      throw Exception('Not your turn');
-    }
-
-    // (Rule checks could go here)
-
-    // Apply move
-    state.pile = [...state.pile, card];
-
-    // Advance turn
-    final idx = state.players.indexOf(playerId);
-    final next = (idx + 1) % state.players.length;
-    state.currentPlayerId = state.players[next];
-
-    // Broadcast the event and the new state
-    session.messages.postMessage(
-      _channel(gameId),
-      CardPlayed(gameId: gameId, playerId: playerId, card: card),
-    );
-    session.messages.postMessage(_channel(gameId), state);
-  }
-
-  // Clients subscribe here to receive GameState *and* CardPlayed events
-  Stream<dynamic> events(Session session, {required String gameId}) async* {
-    // Send current snapshot first
-    final state = _rooms[gameId];
-    if (state != null) yield state;
-
-    final stream = session.messages.createStream<dynamic>(_channel(gameId));
+  // === Stream public state & events ===
+  Stream<dynamic> events(Session s, {required String gameId}) async* {
+    final T = _tables[gameId];
+    if (T != null) yield T.publicState;
+    final stream = s.messages.createStream<dynamic>(_chan(gameId));
     await for (final evt in stream) {
       yield evt;
     }
+  }
+
+  // === Start game & deal 9 ===
+  Future<GameState> deal(Session s, {required String gameId}) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final deck = _buildDeck();
+    deck.shuffle(Random());
+    T.deck = deck;
+
+    for (final p in T.publicState.players) {
+      final nine = deck.take(9).toList();
+      deck.removeRange(0, 9);
+      final hidden = nine.take(3).toList();
+      final visible = nine.skip(3).toList(); // 6 visible
+
+      T.hiddenReal[p] = hidden;
+      T.playerStates[p] = PlayerState(
+        playerId: p,
+        inHand: [],
+        reserve: [],
+        hiddenCount: hidden.length,
+      );
+      T.sixVisible[p] = visible;
+    }
+
+    T.publicState.phase = 'selecting';
+    s.messages.postMessage(_chan(gameId), T.publicState);
+    return T.publicState;
+  }
+
+  // The 6 visible cards (one-time fetch is fine)
+  Future<List<CardModel>> myVisibleSix(Session s, {required String gameId, required String playerId}) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    return List<CardModel>.from(T.sixVisible[playerId] ?? const []);
+  }
+
+  // Player chooses 3 reserve; remaining 3 become inHand
+  Future<void> chooseReserve(Session s,
+      {required String gameId, required String playerId, required List<CardModel> reserve}) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final six = T.sixVisible[playerId] ?? (throw Exception('No visible cards'));
+
+    if (reserve.length != 3 || !_isSubset(reserve, six)) {
+      throw Exception('Pick 3 from your 6');
+    }
+    final inHand = six.where((c) => !reserve.any((r) => _eq(r, c))).toList();
+    final ps = T.playerStates[playerId]!;
+    ps.reserve = List.of(reserve);
+    ps.inHand = inHand;
+    T.sixVisible.remove(playerId);
+
+    // if all players have chosen, enter "playing"
+    final allReady = T.publicState.players.every((p) => (T.playerStates[p]?.inHand.isNotEmpty ?? false));
+    if (allReady) {
+      T.publicState.phase = 'playing';
+      s.messages.postMessage(_chan(gameId), T.publicState);
+    }
+  }
+
+  // Private per-player state (hand/reserve contents)
+  Future<PlayerState> myState(Session s, {required String gameId, required String playerId}) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+    return ps;
+  }
+
+  // Play a card from your hand, validate by rules, advance turn
+  Future<void> playCard(Session s, {required String gameId, required String playerId, required CardModel card}) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final st = T.publicState;
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+
+    if (st.phase != 'playing') throw Exception('Not in playing phase');
+    if (st.currentPlayerId != playerId) throw Exception('Not your turn');
+
+    // ownership
+    if (!ps.inHand.any((c) => _eq(c, card))) throw Exception('You don\'t have that card');
+
+    // rules
+    if (st.pile.isNotEmpty) {
+      final top = st.pile.last.rank;
+      if (!_canPlayOn(top: top, candidate: card.rank)) {
+        throw Exception('Illegal move on $top');
+      }
+    }
+
+    // apply
+    ps.inHand.removeWhere((c) => _eq(c, card));
+    st.pile = [...st.pile, card];
+
+    // replenish flow: reserve -> hidden
+    if (ps.inHand.isEmpty) {
+      if (ps.reserve.isNotEmpty) {
+        ps.inHand = List.of(ps.reserve);
+        ps.reserve = [];
+      } else {
+        final hidden = T.hiddenReal[playerId] ?? [];
+        if (hidden.isNotEmpty) {
+          ps.inHand = List.of(hidden);
+          T.hiddenReal[playerId] = [];
+          ps.hiddenCount = 0;
+        }
+      }
+    }
+
+    // next turn
+    final i = st.players.indexOf(playerId);
+    st.currentPlayerId = st.players[(i + 1) % st.players.length];
+
+    // notify
+    s.messages.postMessage(_chan(gameId), CardPlayed(gameId: gameId, playerId: playerId, card: card));
+    s.messages.postMessage(_chan(gameId), st);
+  }
+
+  // -------- helpers --------
+  bool _eq(CardModel a, CardModel b) => a.rank == b.rank && a.suit == b.suit;
+
+  bool _isSubset(List<CardModel> a, List<CardModel> b) {
+    final used = List<bool>.filled(b.length, false);
+    for (final x in a) {
+      var found = false;
+      for (var i = 0; i < b.length; i++) {
+        if (!used[i] && _eq(x, b[i])) {
+          used[i] = true;
+          found = true;
+          break;
+        }
+      }
+      if (!found) return false;
+    }
+    return true;
+  }
+
+  List<CardModel> _buildDeck() {
+    const suits = ['♣', '♦', '♥', '♠'];
+    const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    final deck = <CardModel>[
+      for (final s in suits)
+        for (final r in ranks) CardModel(suit: s, rank: r),
+      // add Jokers if you want:
+      CardModel(suit: '', rank: 'Joker'),
+      CardModel(suit: '', rank: 'Joker'),
+    ];
+    return deck;
   }
 }

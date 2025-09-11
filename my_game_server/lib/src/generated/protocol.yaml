@@ -1,6 +1,10 @@
 game:
   - join:
-  - playCard:
   - events:
+  - deal:
+  - myVisibleSix:
+  - chooseReserve:
+  - myState:
+  - playCard:
 greeting:
   - hello:

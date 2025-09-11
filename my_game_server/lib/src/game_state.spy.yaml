@@ -4,3 +4,4 @@ fields:
   players: List<String>
   currentPlayerId: String
   pile: List<CardModel>
+  phase: String

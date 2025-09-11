@@ -1,0 +1,6 @@
+class: PlayerState
+fields:
+  playerId: String
+  inHand: List<CardModel>
+  reserve: List<CardModel>     # chosen face-up (visible to owner; public if you want)
+  hiddenCount: int

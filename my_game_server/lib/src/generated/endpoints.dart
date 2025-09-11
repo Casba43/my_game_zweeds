@@ -59,6 +59,102 @@ class Endpoints extends _i1.EndpointDispatch {
             playerId: params['playerId'],
           ),
         ),
+        'deal': _i1.MethodConnector(
+          name: 'deal',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            )
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).deal(
+            session,
+            gameId: params['gameId'],
+          ),
+        ),
+        'myVisibleSix': _i1.MethodConnector(
+          name: 'myVisibleSix',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).myVisibleSix(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+          ),
+        ),
+        'chooseReserve': _i1.MethodConnector(
+          name: 'chooseReserve',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'reserve': _i1.ParameterDescription(
+              name: 'reserve',
+              type: _i1.getType<List<_i4.CardModel>>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).chooseReserve(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+            reserve: params['reserve'],
+          ),
+        ),
+        'myState': _i1.MethodConnector(
+          name: 'myState',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).myState(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+          ),
+        ),
         'playCard': _i1.MethodConnector(
           name: 'playCard',
           params: {
