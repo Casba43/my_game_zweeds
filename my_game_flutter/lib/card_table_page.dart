@@ -84,11 +84,12 @@ class _CardTablePageState extends State<CardTablePage> {
 
     try {
       final state = await client.game.join(gameId: gameId, playerId: playerId);
-      setState(() {
+      setState(() async {
         _state = state;
         _pile.clear();
         _pile.addAll(state.pile);
         _joined = true;
+        await _dealAndChooseReserve();
       });
 
       // Subscribe to server events (GameState or CardPlayed)
@@ -114,20 +115,53 @@ class _CardTablePageState extends State<CardTablePage> {
 
   Future<void> _play() async {
     if (_state == null) return;
-    final rnd = Random();
-    final card = CardModel(
-      suit: _suits[rnd.nextInt(_suits.length)],
-      rank: _ranks[rnd.nextInt(_ranks.length)],
-    );
+    final me = _playerIdCtrl.text.trim();
 
     try {
+      // get my private state to know my actual cards
+      final ps = await client.game.myState(gameId: _state!.gameId, playerId: me);
+      if (ps.inHand.isEmpty) {
+        setState(() => _error = 'No cards in hand');
+        return;
+      }
+
+      // pick a legal card (or first if pile empty)
+      CardModel? toPlay;
+      if (_state!.pile.isEmpty) {
+        toPlay = ps.inHand.first;
+      } else {
+        final top = _state!.pile.last.rank;
+        toPlay = ps.inHand.firstWhere(
+          (c) => canPlayOn(top: top, candidate: c.rank),
+        );
+      }
+
       await client.game.playCard(
         gameId: _state!.gameId,
-        playerId: _playerIdCtrl.text.trim(),
-        card: card,
+        playerId: me,
+        card: toPlay,
       );
     } catch (e) {
       setState(() => _error = 'Play failed: $e');
+    }
+  }
+
+  Future<void> _dealAndChooseReserve() async {
+    final gameId = _gameIdCtrl.text.trim();
+    final me = _playerIdCtrl.text.trim();
+
+    // Only call deal if phase isn't already 'selecting' or 'playing'
+    // (if multiple clients, any one can press the button)
+    await client.game.deal(gameId: gameId);
+
+    // fetch my 6 visible and auto-pick first 3 as reserve (simple for now)
+    final six = await client.game.myVisibleSix(gameId: gameId, playerId: me);
+    if (six.length == 6) {
+      await client.game.chooseReserve(
+        gameId: gameId,
+        playerId: me,
+        reserve: six.take(3).toList(),
+      );
     }
   }
 
