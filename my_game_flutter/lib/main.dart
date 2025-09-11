@@ -1,6 +1,9 @@
 import 'package:my_game_client/my_game_client.dart';
 import 'package:flutter/material.dart';
+import 'package:my_game_flutter/serverpod_client.dart';
 import 'package:serverpod_flutter/serverpod_flutter.dart';
+
+import 'card_table_page.dart';
 
 /// Sets up a global client object that can be used to talk to the server from
 /// anywhere in our app. The client is generated from your server code
@@ -13,31 +16,30 @@ late final Client client;
 
 late String serverUrl;
 
-void main() {
+void main() async {
   // When you are running the app on a physical device, you need to set the
   // server URL to the IP address of your computer. You can find the IP
   // address by running `ipconfig` on Windows or `ifconfig` on Mac/Linux.
   // You can set the variable when running or building your app like this:
   // E.g. `flutter run --dart-define=SERVER_URL=https://api.example.com/`
-  const serverUrlFromEnv = String.fromEnvironment('SERVER_URL');
-  final serverUrl =
-      serverUrlFromEnv.isEmpty ? 'http://$localhost:8080/' : serverUrlFromEnv;
+  WidgetsFlutterBinding.ensureInitialized();
 
-  client = Client(serverUrl)
-    ..connectivityMonitor = FlutterConnectivityMonitor();
+  await initServerpod();
+
+  const serverUrlFromEnv = String.fromEnvironment('SERVER_URL');
+  final serverUrl = serverUrlFromEnv.isEmpty ? 'http://$localhost:8080/' : serverUrlFromEnv;
+
+  client = Client(serverUrl)..connectivityMonitor = FlutterConnectivityMonitor();
 
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Serverpod Demo',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const MyHomePage(title: 'Serverpod Example'),
+    return const MaterialApp(
+      home: CardTablePage(),
     );
   }
 }

@@ -1,0 +1,17 @@
+class: CardModel
+fields:
+  suit: String
+  rank: String
+---
+class: CardPlayed
+fields:
+  gameId: String
+  playerId: String
+  card: CardModel
+---
+class: GameState
+fields:
+  gameId: String
+  players: List<String>
+  currentPlayerId: String
+  pile: List<CardModel>

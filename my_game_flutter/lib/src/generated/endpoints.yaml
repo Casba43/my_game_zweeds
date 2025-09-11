@@ -1,0 +1,7 @@
+endpoints:
+  game:
+    class: GameEndpoint
+    methods:
+      join:
+      playCard:
+      events:
