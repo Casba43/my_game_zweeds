@@ -10,19 +10,108 @@
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:serverpod/serverpod.dart' as _i1;
-import '../greeting_endpoint.dart' as _i2;
+import '../endpoints/game_endpoint.dart' as _i2;
+import '../greeting_endpoint.dart' as _i3;
+import 'package:my_game_server/src/generated/card_model.dart' as _i4;
 
 class Endpoints extends _i1.EndpointDispatch {
   @override
   void initializeEndpoints(_i1.Server server) {
     var endpoints = <String, _i1.Endpoint>{
-      'greeting': _i2.GreetingEndpoint()
+      'game': _i2.GameEndpoint()
+        ..initialize(
+          server,
+          'game',
+          null,
+        ),
+      'greeting': _i3.GreetingEndpoint()
         ..initialize(
           server,
           'greeting',
           null,
-        )
+        ),
     };
+    connectors['game'] = _i1.EndpointConnector(
+      name: 'game',
+      endpoint: endpoints['game']!,
+      methodConnectors: {
+        'join': _i1.MethodConnector(
+          name: 'join',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).join(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+          ),
+        ),
+        'playCard': _i1.MethodConnector(
+          name: 'playCard',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'card': _i1.ParameterDescription(
+              name: 'card',
+              type: _i1.getType<_i4.CardModel>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).playCard(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+            card: params['card'],
+          ),
+        ),
+        'events': _i1.MethodStreamConnector(
+          name: 'events',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            )
+          },
+          streamParams: {},
+          returnType: _i1.MethodStreamReturnType.streamType,
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+            Map<String, Stream> streamParams,
+          ) =>
+              (endpoints['game'] as _i2.GameEndpoint).events(
+            session,
+            gameId: params['gameId'],
+          ),
+        ),
+      },
+    );
     connectors['greeting'] = _i1.EndpointConnector(
       name: 'greeting',
       endpoint: endpoints['greeting']!,
@@ -40,7 +129,7 @@ class Endpoints extends _i1.EndpointDispatch {
             _i1.Session session,
             Map<String, dynamic> params,
           ) async =>
-              (endpoints['greeting'] as _i2.GreetingEndpoint).hello(
+              (endpoints['greeting'] as _i3.GreetingEndpoint).hello(
             session,
             params['name'],
           ),

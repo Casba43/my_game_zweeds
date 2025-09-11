@@ -1,4 +1,5 @@
 type: server
 
 client_package_path: ../my_game_client
+generate_client: true
 server_test_tools_path: test/integration/test_tools

@@ -1,2 +1,6 @@
+game:
+  - join:
+  - playCard:
+  - events:
 greeting:
   - hello:

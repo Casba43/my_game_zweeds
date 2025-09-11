@@ -1,0 +1,6 @@
+class: GameState
+fields:
+  gameId: String
+  players: List<String>
+  currentPlayerId: String
+  pile: List<CardModel>
