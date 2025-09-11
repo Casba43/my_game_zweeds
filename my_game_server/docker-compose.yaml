@@ -1,0 +1,44 @@
+services:
+  # Development services
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "8090:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: my_game
+      POSTGRES_PASSWORD: "8NqCgGPB2K3jw4pMVwZoawwgz1gtS1iE"
+    volumes:
+      - my_game_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6.2.6
+    ports:
+      - "8091:6379"
+    command: redis-server --requirepass "7wBBPYBlwLz-VBFhVv66xlezv8p8xo6s"
+    environment:
+      - REDIS_REPLICATION_MODE=master
+
+  # Test services
+  postgres_test:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "9090:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: my_game_test
+      POSTGRES_PASSWORD: "S80MDbiK9u8ucsvoZlpJXbVHfb47dbAH"
+    volumes:
+      - my_game_test_data:/var/lib/postgresql/data
+
+  redis_test:
+    image: redis:6.2.6
+    ports:
+      - "9091:6379"
+    command: redis-server --requirepass "hA3kfi_70HOy2JBNgZuo4k0q5fXFoG5D"
+    environment:
+      - REDIS_REPLICATION_MODE=master
+
+volumes:
+  my_game_data:
+  my_game_test_data:
