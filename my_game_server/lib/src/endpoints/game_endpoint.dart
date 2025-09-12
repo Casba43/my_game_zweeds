@@ -2,6 +2,16 @@ import 'package:serverpod/serverpod.dart';
 import '../generated/protocol.dart';
 import 'dart:math';
 
+class _SpecialsResult {
+  final bool burned;
+  final int skipCount;
+
+  const _SpecialsResult({
+    required this.burned,
+    required this.skipCount,
+  });
+}
+
 // -------- Rules (server-side copy) --------
 String _normRank(String r) {
   r = r.trim().toUpperCase();
@@ -53,13 +63,16 @@ bool _canPlayOn({required String top, required String candidate}) {
   return allowed != null && allowed.contains(c);
 }
 
-// -------- Memory model for a single table --------
 class _TableMem {
   GameState publicState;
-  final Map<String, PlayerState> playerStates; // per-player
-  final Map<String, List<CardModel>> hiddenReal; // true hidden (server only)
-  final Map<String, List<CardModel>> sixVisible; // temp visible 6 per player
+  final Map<String, PlayerState> playerStates;
+  final Map<String, List<CardModel>> hiddenReal;
+  final Map<String, List<CardModel>> sixVisible;
   List<CardModel> deck;
+
+  // NEW: server-side discard pile; not exposed publicly (unless you want to)
+  final List<CardModel> graveyard = [];
+
   _TableMem(this.publicState, this.playerStates, this.hiddenReal, this.deck) : sixVisible = {};
 }
 
@@ -311,28 +324,27 @@ class GameEndpoint extends Endpoint {
     if (st.currentPlayerId != playerId) throw Exception('Not your turn');
     if (cards.isEmpty) throw Exception('No cards provided');
 
-    // Ownership & same-rank validation (normalized)
+    // Ownership & same-rank validation
     final want = List<CardModel>.from(cards);
     if (!_isSubset(want, ps.inHand)) throw Exception('One or more cards are not in your hand');
 
     final normRanks = want.map((c) => _normRank(c.rank)).toSet();
     if (normRanks.length != 1) throw Exception('All played cards must have the same rank');
-
     final playRank = normRanks.single;
 
-    // Pile legality (treat as playing one of this rank; your rule set decides)
+    // Pile legality (treat multi as playing one of that rank)
     if (!_isLegalOnPile(st.pile, playRank)) {
       final eff = _effectiveTopRank(st.pile);
       throw Exception('Illegal move on ${eff ?? 'empty pile'}');
     }
 
-    // Apply atomically: remove all from hand, append to pile in given order
+    // Apply: remove all from hand, push to pile
     for (final c in want) {
       ps.inHand.removeWhere((x) => _eq(x, c));
     }
     st.pile = [...st.pile, ...want];
 
-    // Replenish like your single-card flow
+    // Replenish (same as your single-card flow)
     if (ps.inHand.isEmpty) {
       if (ps.reserve.isNotEmpty) {
         ps.inHand = List.of(ps.reserve);
@@ -347,10 +359,29 @@ class GameEndpoint extends Endpoint {
     }
     _syncCounts(T, playerId);
 
-    // Advance turn
-    _advanceTurn(T);
+    // Specials: burn / skip handling
+    final res = _applySpecialsAfterPlay(
+      T: T,
+      playerId: playerId,
+      playedRankNorm: playRank,
+      playedCount: want.length,
+    );
 
-    // Notify: emit last card as CardPlayed (keeps client compatible) + whole state
+    // Decide turn progression:
+    if (res.burned) {
+      // Burn overrides skip. After burn, either same player again or next (configurable)
+      if (kExtraTurnAfterBurn) {
+        // Keep currentPlayerId as the same player
+        st.currentPlayerId = playerId;
+      } else {
+        _advanceTurn(T);
+      }
+    } else {
+      // Normal advance + skip N
+      _advanceTurnBy(T, 1 + res.skipCount);
+    }
+
+    // Notify
     if (want.isNotEmpty) {
       final last = want.last;
       s.messages.postMessage(_chan(gameId), CardPlayed(gameId: gameId, playerId: playerId, card: last));
@@ -399,40 +430,110 @@ class GameEndpoint extends Endpoint {
     return false;
   }
 
+  bool kExtraTurnAfterBurn = false;
+
   void _advanceTurn(_TableMem T) {
     final st = T.publicState;
-    final i = st.players.indexOf(st.currentPlayerId ?? '0');
+    final i = st.players.indexOf(st.currentPlayerId ?? '');
     st.currentPlayerId = st.players[(i + 1) % st.players.length];
   }
 
+  void _advanceTurnBy(_TableMem T, int steps) {
+    final st = T.publicState;
+    if (st.players.isEmpty) return;
+    final n = st.players.length;
+    final i = st.players.indexOf(st.currentPlayerId ?? '');
+    st.currentPlayerId = st.players[(i + (steps % n)) % n];
+  }
+
+// Top-most visible rank (ignores 3 / Joker)
+  String? _topVisibleRank(List<CardModel> pile) => _effectiveTopRank(pile);
+
+// Count the top run length of the same VISIBLE rank (ignoring 3/Joker in between)
+  int _topVisibleRunLen(List<CardModel> pile) {
+    String? target;
+    int count = 0;
+    for (int i = pile.length - 1; i >= 0; i--) {
+      final r = _normRank(pile[i].rank);
+      if (r == '3' || r == 'Joker') {
+        // invisible: skip but don't break the run
+        continue;
+      }
+      if (target == null) {
+        target = r;
+        count = 1;
+      } else if (r == target) {
+        count++;
+      } else {
+        break;
+      }
+      // keep scanning upwards until a different visible rank is found
+    }
+    return count;
+  }
+
+  _SpecialsResult _applySpecialsAfterPlay({
+    required _TableMem T,
+    required String playerId,
+    required String playedRankNorm,
+    required int playedCount,
+  }) {
+    final st = T.publicState;
+
+    // Rule 1: Play a 10 -> burn the entire pile (immediate)
+    if (playedRankNorm == '10') {
+      _burnPile(T);
+      // Turn handling after burn is decided below by caller
+      return _SpecialsResult(burned: true, skipCount: 0);
+    }
+
+    // Rule 2: Four-of-a-kind on top (visible) -> burn
+    final topRun = _topVisibleRunLen(st.pile);
+    if (topRun >= 4) {
+      _burnPile(T);
+      return _SpecialsResult(burned: true, skipCount: 0);
+    }
+
+    // Rule 3: Eights skip N players
+    if (playedRankNorm == '8') {
+      return _SpecialsResult(burned: false, skipCount: playedCount);
+    }
+
+    return _SpecialsResult(burned: false, skipCount: 0);
+  }
+
+  void _burnPile(_TableMem T) {
+    final st = T.publicState;
+    if (st.pile.isEmpty) return;
+    T.graveyard.addAll(st.pile);
+    st.pile = [];
+  }
+
   // Play a card from your hand, validate by rules, advance turn
-  Future<void> playCard(Session s, {required String gameId, required String playerId, required CardModel card}) async {
+  Future<void> playCard(
+    Session s, {
+    required String gameId,
+    required String playerId,
+    required CardModel card,
+  }) async {
     final T = _tables[gameId] ?? (throw Exception('No such game'));
     final st = T.publicState;
     final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+
+    if (st.phase != 'playing') throw Exception('Not in playing phase');
+    if (st.currentPlayerId != playerId) throw Exception('Not your turn');
+
     if (!_isLegalOnPile(st.pile, card.rank)) {
       final eff = _effectiveTopRank(st.pile);
       throw Exception('Illegal move on ${eff ?? 'empty pile'}');
     }
-    if (st.phase != 'playing') throw Exception('Not in playing phase');
-    if (st.currentPlayerId != playerId) throw Exception('Not your turn');
-
-    // ownership
     if (!ps.inHand.any((c) => _eq(c, card))) throw Exception('You don\'t have that card');
 
-    // rules
-    if (st.pile.isNotEmpty) {
-      final top = st.pile.last.rank;
-      if (!_canPlayOn(top: top, candidate: card.rank)) {
-        throw Exception('Illegal move on $top');
-      }
-    }
-
-    // apply
+    // Apply
     ps.inHand.removeWhere((c) => _eq(c, card));
     st.pile = [...st.pile, card];
 
-    // replenish flow: reserve -> hidden
+    // Replenish like before
     if (ps.inHand.isEmpty) {
       if (ps.reserve.isNotEmpty) {
         ps.inHand = List.of(ps.reserve);
@@ -445,13 +546,27 @@ class GameEndpoint extends Endpoint {
         }
       }
     }
-    _syncCounts(T, playerId); // NEW
+    _syncCounts(T, playerId);
 
-    // next turn
-    final i = st.players.indexOf(playerId);
-    st.currentPlayerId = st.players[(i + 1) % st.players.length];
+    // Specials
+    final res = _applySpecialsAfterPlay(
+      T: T,
+      playerId: playerId,
+      playedRankNorm: _normRank(card.rank),
+      playedCount: 1,
+    );
 
-    // notify
+    if (res.burned) {
+      if (kExtraTurnAfterBurn) {
+        st.currentPlayerId = playerId;
+      } else {
+        _advanceTurn(T);
+      }
+    } else {
+      _advanceTurnBy(T, 1 + res.skipCount);
+    }
+
+    // Notify
     s.messages.postMessage(_chan(gameId), CardPlayed(gameId: gameId, playerId: playerId, card: card));
     s.messages.postMessage(_chan(gameId), st);
   }
