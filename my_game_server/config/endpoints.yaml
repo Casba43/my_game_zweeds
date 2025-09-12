@@ -1,0 +1,3 @@
+endpoints:
+  game:
+    class: GameEndpoint
