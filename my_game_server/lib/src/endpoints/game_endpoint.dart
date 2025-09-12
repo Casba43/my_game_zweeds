@@ -430,7 +430,7 @@ class GameEndpoint extends Endpoint {
     return false;
   }
 
-  bool kExtraTurnAfterBurn = false;
+  bool kExtraTurnAfterBurn = true;
 
   void _advanceTurn(_TableMem T) {
     final st = T.publicState;
