@@ -1,5 +1,4 @@
 import 'package:serverpod/serverpod.dart';
-import '../game/game_store.dart';
 import '../generated/protocol.dart';
 import 'dart:math';
 
@@ -74,93 +73,105 @@ class GameEndpoint extends Endpoint {
     return T.publicState;
   }
 
-  GameTable _table(String gameId) => GameStore.I.getOrCreate(gameId);
-
   Future<DrawResult> drawUpToThree(
-    Session session, {
+    Session s, {
     required String gameId,
     required String playerId,
   }) async {
-    final table = _table(gameId);
-    final p = table.playerById(playerId);
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
 
     bool changed = false;
 
-    // try to keep 3 cards in hand: stack -> reserve
-    while (p.inHand.length < 3) {
-      if (table.stack.isNotEmpty) {
-        p.inHand.add(table.stack.removeLast());
+    // Top up to 3: deck (table stack) -> player reserve
+    while (ps.inHand.length < 3) {
+      if (T.deck.isNotEmpty) {
+        ps.inHand.add(T.deck.removeLast());
         changed = true;
         continue;
       }
-      if (p.reserve.isNotEmpty) {
-        p.inHand.add(p.reserve.removeLast());
+      if (ps.reserve.isNotEmpty) {
+        ps.inHand.add(ps.reserve.removeLast());
         changed = true;
         continue;
       }
-      break; // nothing left except blind
+      break; // Only facedown left -> blind pick phase
     }
 
-    final needsBlindPick = p.inHand.length < 3 && p.facedown.isNotEmpty;
+    final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
+    final needsBlindPick = ps.inHand.length < 3 && facedown.isNotEmpty;
 
-    if (changed) table.broadcastState();
+    // keep counts current for myState()
+    ps
+      ..stackCount = T.deck.length
+      ..reserveCount = ps.reserve.length
+      ..blindCount = facedown.length;
+
+    if (changed) s.messages.postMessage(_chan(gameId), T.publicState);
 
     return DrawResult(
       changed: changed,
       needsBlindPick: needsBlindPick,
-      handSize: p.inHand.length,
-      stackCount: table.stack.length,
-      reserveCount: p.reserve.length,
-      blindCount: p.facedown.length,
+      handSize: ps.inHand.length,
+      stackCount: ps.stackCount,
+      reserveCount: ps.reserveCount,
+      blindCount: ps.blindCount,
     );
   }
 
   Future<DrawResult> drawBlindTopDown(
-    Session session, {
+    Session s, {
     required String gameId,
     required String playerId,
-    required int index, // 0..2 (topmost is 0)
+    required int index, // 0..2 top-down
   }) async {
-    final table = _table(gameId);
-    final p = table.playerById(playerId);
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+    final facedown = T.hiddenReal[playerId] ?? (throw Exception('No facedown'));
 
-    if (p.facedown.isEmpty) {
+    if (facedown.isEmpty) {
       return DrawResult(
         changed: false,
         needsBlindPick: false,
-        handSize: p.inHand.length,
-        stackCount: table.stack.length,
-        reserveCount: p.reserve.length,
-        blindCount: p.facedown.length,
+        handSize: ps.inHand.length,
+        stackCount: T.deck.length,
+        reserveCount: ps.reserve.length,
+        blindCount: 0,
       );
     }
-    if (index < 0 || index >= p.facedown.length) {
+    if (index < 0 || index >= facedown.length) {
       throw ArgumentError('Invalid blind index');
     }
 
-    p.inHand.add(p.facedown.removeAt(index));
-    // after blind, try topping up again (stack -> reserve)
-    while (p.inHand.length < 3) {
-      if (table.stack.isNotEmpty) {
-        p.inHand.add(table.stack.removeLast());
+    ps.inHand.add(facedown.removeAt(index));
+
+    // Immediately try to top-up again from deck/reserve
+    while (ps.inHand.length < 3) {
+      if (T.deck.isNotEmpty) {
+        ps.inHand.add(T.deck.removeLast());
         continue;
       }
-      if (p.reserve.isNotEmpty) {
-        p.inHand.add(p.reserve.removeLast());
+      if (ps.reserve.isNotEmpty) {
+        ps.inHand.add(ps.reserve.removeLast());
         continue;
       }
       break;
     }
 
-    table.broadcastState();
+    ps
+      ..stackCount = T.deck.length
+      ..reserveCount = ps.reserve.length
+      ..blindCount = facedown.length;
+
+    s.messages.postMessage(_chan(gameId), T.publicState);
 
     return DrawResult(
       changed: true,
-      needsBlindPick: p.inHand.length < 3 && p.facedown.isNotEmpty,
-      handSize: p.inHand.length,
-      stackCount: table.stack.length,
-      reserveCount: p.reserve.length,
-      blindCount: p.facedown.length,
+      needsBlindPick: ps.inHand.length < 3 && facedown.isNotEmpty,
+      handSize: ps.inHand.length,
+      stackCount: ps.stackCount,
+      reserveCount: ps.reserveCount,
+      blindCount: ps.blindCount,
     );
   }
 

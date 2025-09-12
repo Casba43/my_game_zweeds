@@ -17,6 +17,7 @@ import 'draw_result.dart' as _i5;
 import 'game_state.dart' as _i6;
 import 'greeting.dart' as _i7;
 import 'player_state.dart' as _i8;
+import 'package:my_game_server/src/generated/card_model.dart' as _i9;
 export 'card_model.dart';
 export 'card_played.dart';
 export 'draw_result.dart';
@@ -82,6 +83,10 @@ class Protocol extends _i1.SerializationManagerServer {
     }
     if (t == List<_i3.CardModel>) {
       return (data as List).map((e) => deserialize<_i3.CardModel>(e)).toList()
+          as T;
+    }
+    if (t == List<_i9.CardModel>) {
+      return (data as List).map((e) => deserialize<_i9.CardModel>(e)).toList()
           as T;
     }
     try {

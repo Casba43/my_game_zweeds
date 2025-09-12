@@ -1,2 +1,12 @@
+game:
+  - join:
+  - drawUpToThree:
+  - drawBlindTopDown:
+  - events:
+  - deal:
+  - myVisibleSix:
+  - chooseReserve:
+  - myState:
+  - playCard:
 greeting:
   - hello:

@@ -1,31 +1,27 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:my_game_client/my_game_client.dart';
 import 'serverpod_client.dart';
 
-// lib/src/models/ranks.dart (both sides can mirror this)
-const ranksOrder = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'];
-
-// Your matrix (fixed 10 vs "1")
-// Single source of truth: what may be played ON TOP of the given top-rank.
-final Map<String, List<String>> ruleSetStandard = {
+/// ===================== RULES =====================
+/// Single source of truth: allowed ranks that may be played ON TOP of a given (effective) top rank.
+const Map<String, List<String>> _ruleSetStandard = {
   '2': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   '3': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   '4': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   '5': ['2', '3', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   '6': ['2', '3', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
-  // <- Your explicit example: on 7 you can play 2,3,4,5,6,7 or Joker
+  // On 7 you can play 2..7 or Joker
   '7': ['2', '3', '4', '5', '6', '7', 'Joker'],
-  // Your example for Q says 3,2,J,Q,K,A,Joker (order doesn't matter)
   '8': ['2', '3', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   '9': ['2', '3', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   '10': ['2', '3', '10', 'J', 'Q', 'K', 'A', 'Joker'],
   'J': ['2', '3', 'J', 'Q', 'K', 'A', 'Joker'],
+  // On Q you can play 2,3,J,Q,K,A or Joker
   'Q': ['2', '3', 'J', 'Q', 'K', 'A', 'Joker'],
   'K': ['2', '3', 'K', 'A', 'Joker'],
   'A': ['2', '3', 'A', 'Joker'],
-  // On top of Joker you can play anything (handled in canPlayOn)
+  // If the effective top is Joker (shouldn't happen with invisibility), allow anything.
   'Joker': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
 };
 
@@ -36,31 +32,31 @@ String normRank(String r) {
   return r;
 }
 
+/// Effective top rank ignores trailing 3/Joker on the pile.
+String? effectiveTopRank(List<CardModel> pile) {
+  for (int i = pile.length - 1; i >= 0; i--) {
+    final r = normRank(pile[i].rank);
+    if (r != '3' && r != 'Joker') return r;
+  }
+  return null; // pile empty or only invisibles
+}
+
+/// Pile-aware legality: 3/Joker are always allowed (wild & invisible).
 bool canPlayOnWithPile({
   required List<CardModel> pile,
   required String candidate,
 }) {
   final c = normRank(candidate);
-
-  // Wild cards can always be played; they don't change the effective top for next turn.
   if (c == '3' || c == 'Joker') return true;
 
-  final tEff = effectiveTopRank(pile);
-  if (tEff == null) return true; // no visible requirement
+  final eff = effectiveTopRank(pile);
+  if (eff == null) return true; // no visible requirement yet
 
-  final allowed = ruleSetStandard[tEff];
+  final allowed = _ruleSetStandard[eff];
   return allowed?.contains(c) ?? false;
 }
 
-String? effectiveTopRank(List<CardModel> pile) {
-  if (pile.isEmpty) return null;
-  for (int i = pile.length - 1; i >= 0; i--) {
-    final r = normRank(pile[i].rank);
-    if (r != '3' && r != 'Joker') return r; // first non-invisible from top down
-  }
-  return null; // pile contains only 3/Joker => treat as no requirement
-}
-
+/// ===================== UI PAGE =====================
 class CardTablePage extends StatefulWidget {
   const CardTablePage({super.key});
   @override
@@ -71,25 +67,57 @@ class _CardTablePageState extends State<CardTablePage> {
   final _gameIdCtrl = TextEditingController(text: 'table-1');
   final _playerIdCtrl = TextEditingController();
   StreamSubscription? _sub;
+
+  GameState? _state;
+  final List<CardModel> _pile = [];
+
   List<CardModel> _myHand = [];
   List<CardModel> _myVisibleSix = [];
-  List<CardModel> _myReserve = [];
-  bool _reserveConfirmed = false; // set this to true after confirmReserve()
-  bool _blindMode = false; // true when both stack & reserve are drained
-  CardModel? _selectedCard;
+  final List<CardModel> _myReserve = [];
 
-  final List<int> _blindSlots = [0, 1, 2]; // purely UI; server owns truth
-// --- DRAW HELPERS ---
-// return true if a card was drawn, false if that source is empty
-  Future<bool> _tryDrawFromStack() async {
-    try {
-      await client.game.drawFromStack(gameId: _state!.gameId, playerId: _playerIdCtrl.text.trim());
-      return true;
-    } catch (_) {
-      return false;
-    }
+  bool _reserveConfirmed = false; // set true after confirmReserve()
+  bool _blindMode = false; // true when stack & reserve are empty
+  bool _loading = false;
+  String? _error;
+
+  CardModel? _selectedCard;
+  bool sameCard(CardModel a, CardModel b) => a.rank == b.rank && a.suit == b.suit;
+
+  bool get _isMyTurn {
+    final me = _playerIdCtrl.text.trim();
+    return _state?.currentPlayerId == me;
   }
 
+  bool _isLegal(CardModel c) {
+    if (_state == null) return false;
+    return canPlayOnWithPile(pile: _state!.pile, candidate: c.rank);
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _gameIdCtrl.dispose();
+    _playerIdCtrl.dispose();
+    super.dispose();
+  }
+
+  /// ======== CLIENT HELPERS ========
+  Future<void> _refreshMyState() async {
+    if (_state == null) return;
+    final gameId = _state!.gameId;
+    final me = _playerIdCtrl.text.trim();
+    try {
+      final ps = await client.game.myState(gameId: gameId, playerId: me);
+      final six =
+          _reserveConfirmed ? const <CardModel>[] : await client.game.myVisibleSix(gameId: gameId, playerId: me);
+      setState(() {
+        _myHand = List<CardModel>.from(ps.inHand);
+        _myVisibleSix = List<CardModel>.from(six);
+      });
+    } catch (_) {/* ignore transient */}
+  }
+
+  /// Ask server to keep our hand at 3 (stack -> reserve -> blind).
   Future<void> _autoReplenishHand() async {
     if (_state == null) return;
     try {
@@ -104,13 +132,12 @@ class _CardTablePageState extends State<CardTablePage> {
     } catch (_) {/* ignore transient */}
   }
 
-// Blind draw: user picks one of the three face-down cards (top-down)
   Future<bool> _drawBlind(int index) async {
     try {
       await client.game.drawBlindTopDown(
         gameId: _state!.gameId,
         playerId: _playerIdCtrl.text.trim(),
-        index: index, // 0,1,2 where 0 is “topmost”
+        index: index, // 0..2 top-down
       );
       return true;
     } catch (_) {
@@ -118,73 +145,7 @@ class _CardTablePageState extends State<CardTablePage> {
     }
   }
 
-  bool sameCard(CardModel a, CardModel b) => a.rank == b.rank && a.suit == b.suit;
-  bool get _isMyTurn {
-    final me = _playerIdCtrl.text.trim();
-    return _state?.currentPlayerId == me;
-  }
-
-  bool _isLegal(CardModel c) {
-    if (_state == null) return false;
-    return canPlayOnWithPile(pile: _state!.pile, candidate: c.rank);
-  }
-
-  bool _loading = false;
-  Future<void> _refreshMyState() async {
-    if (_state == null) return;
-    final gameId = _state!.gameId;
-    final me = _playerIdCtrl.text.trim();
-    try {
-      final ps = await client.game.myState(gameId: gameId, playerId: me);
-      final six = _reserveConfirmed
-          ? const <CardModel>[] // ✅ don’t re-show once done
-          : await client.game.myVisibleSix(gameId: gameId, playerId: me);
-      setState(() {
-        _myHand = List<CardModel>.from(ps.inHand);
-        _myVisibleSix = List<CardModel>.from(six);
-        // _myReserve kept client-side
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _waitForVisibleSixAndChooseReserve({int retries = 15}) async {
-    final gameId = _gameIdCtrl.text.trim();
-    final me = _playerIdCtrl.text.trim();
-    for (var i = 0; i < retries; i++) {
-      try {
-        final six = await client.game.myVisibleSix(gameId: gameId, playerId: me);
-        if (six.length == 6) {
-          setState(() => _myVisibleSix = six);
-          await client.game.chooseReserve(
-            gameId: gameId,
-            playerId: me,
-            reserve: six.take(3).toList(),
-          );
-          await _refreshMyState();
-          return;
-        }
-      } catch (_) {}
-      await Future.delayed(const Duration(milliseconds: 200)); // small backoff
-    }
-    setState(() => _error = 'Could not fetch the six visible cards (timed out).');
-  }
-
-  GameState? _state;
-  final List<CardModel> _pile = [];
-
-  final _ranks = ['A', 'K', 'Q', 'J', '10', '9'];
-  final _suits = ['♣', '♦', '♥', '♠'];
-  bool _joined = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    _gameIdCtrl.dispose();
-    _playerIdCtrl.dispose();
-    super.dispose();
-  }
-
+  /// ======== FLOWS ========
   Future<void> _join() async {
     setState(() {
       _error = null;
@@ -204,14 +165,15 @@ class _CardTablePageState extends State<CardTablePage> {
         _pile
           ..clear()
           ..addAll(state.pile);
-        _joined = true;
         _reserveConfirmed = false;
         _myReserve.clear();
         _myVisibleSix = [];
       });
+
       await _refreshMyState();
       await _autoReplenishHand();
-      // Subscribe to public events, and refresh private state on each
+
+      // Subscribe to server events
       _sub?.cancel();
       _sub = client.game.events(gameId: gameId).listen((evt) async {
         if (evt is GameState) {
@@ -222,77 +184,27 @@ class _CardTablePageState extends State<CardTablePage> {
               ..addAll(evt.pile);
           });
           await _refreshMyState();
+          // Optional: keep topped up even on others' turns (safe & idempotent)
+          await _autoReplenishHand();
         } else if (evt is CardPlayed) {
-          setState(() {
-            _pile.add(evt.card);
-          });
+          setState(() => _pile.add(evt.card));
           await _refreshMyState();
+          await _autoReplenishHand();
         }
       });
 
-      // Kick off deal/reserve only once per table (or guard by phase on server).
-      _dealAndChooseReserve();
-
-      // // Subscribe to server events (GameState or CardPlayed)
-      // _sub?.cancel();
-      // _sub = client.game.events(gameId: gameId).listen((evt) {
-      //   if (evt is GameState) {
-      //     setState(() {
-      //       _state = evt;
-      //       _pile
-      //         ..clear()
-      //         ..addAll(evt.pile);
-      //     });
-      //   } else if (evt is CardPlayed) {
-      //     setState(() {
-      //       _pile.add(evt.card);
-      //     });
-      //   }
-      // });
+      // Start a deal (any player may trigger; server should guard phase)
+      await _deal();
     } catch (e) {
       setState(() => _error = 'Join failed: $e');
     }
   }
 
-  Future<void> _playSelected() async {
-    if (_state == null || _selectedCard == null) return;
-    final me = _playerIdCtrl.text.trim();
-    final selected = _selectedCard!;
-    try {
-      // always refresh hand first to reduce stale clicks
-      final ps = await client.game.myState(gameId: _state!.gameId, playerId: me);
-      final inHand = ps.inHand;
-      final exists = inHand.any((c) => c.rank == selected.rank && c.suit == selected.suit);
-      if (!exists) {
-        setState(() => _error = 'Selected card is no longer in your hand.');
-        await _refreshMyState();
-        return;
-      }
-      if (!_isLegal(selected)) {
-        setState(() => _error = 'That card cannot be played on the current top card.');
-        return;
-      }
-
-      await client.game.playCard(
-        gameId: _state!.gameId,
-        playerId: me,
-        card: selected,
-      );
-      setState(() => _selectedCard = null); // clear selection after a successful play
-
-      await _refreshMyState();
-      await _autoReplenishHand();
-    } catch (e) {
-      setState(() => _error = 'Play failed: $e');
-    }
-  }
-
-  Future<void> _dealAndChooseReserve() async {
+  Future<void> _deal() async {
     if (_state == null || _loading) return;
     setState(() => _loading = true);
     try {
       await client.game.deal(gameId: _state!.gameId);
-      // Now wait for server to populate the 6 visible; UI will show them.
       _reserveConfirmed = false;
       _myReserve.clear();
       _myVisibleSix = [];
@@ -314,13 +226,10 @@ class _CardTablePageState extends State<CardTablePage> {
     setState(() => _loading = true);
     try {
       await client.game.chooseReserve(gameId: gameId, playerId: me, reserve: _myReserve);
-      _reserveConfirmed = true; // ✅ mark done
-      setState(() {
-        _myVisibleSix = []; // ✅ hide the 6 visible
-      });
-      await _refreshMyState(); //
+      _reserveConfirmed = true;
+      setState(() => _myVisibleSix = []);
+      await _refreshMyState();
       await _autoReplenishHand();
-      // remaining 3 should appear in _myHand
     } catch (e) {
       setState(() => _error = 'Reserve failed: $e');
     } finally {
@@ -328,6 +237,34 @@ class _CardTablePageState extends State<CardTablePage> {
     }
   }
 
+  Future<void> _playSelected() async {
+    if (_state == null || _selectedCard == null) return;
+    final me = _playerIdCtrl.text.trim();
+    final selected = _selectedCard!;
+    try {
+      // Re-validate ownership & legality
+      final ps = await client.game.myState(gameId: _state!.gameId, playerId: me);
+      if (!ps.inHand.any((c) => c.rank == selected.rank && c.suit == selected.suit)) {
+        setState(() => _error = 'Selected card is no longer in your hand.');
+        await _refreshMyState();
+        return;
+      }
+      if (!_isLegal(selected)) {
+        setState(() => _error = 'That card cannot be played on the current top card.');
+        return;
+      }
+
+      await client.game.playCard(gameId: _state!.gameId, playerId: me, card: selected);
+      setState(() => _selectedCard = null);
+
+      await _refreshMyState();
+      await _autoReplenishHand();
+    } catch (e) {
+      setState(() => _error = 'Play failed: $e');
+    }
+  }
+
+  /// ===================== BUILD =====================
   @override
   Widget build(BuildContext context) {
     final turn = _state?.currentPlayerId;
@@ -339,7 +276,8 @@ class _CardTablePageState extends State<CardTablePage> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            if (!_joined) ...[
+            // ===== Not joined: login fields =====
+            if (_state == null) ...[
               TextField(
                 controller: _gameIdCtrl,
                 decoration: const InputDecoration(labelText: 'Game ID'),
@@ -350,11 +288,9 @@ class _CardTablePageState extends State<CardTablePage> {
                 decoration: const InputDecoration(labelText: 'Player ID'),
               ),
               const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _join,
-                child: const Text('Join Table'),
-              ),
+              ElevatedButton(onPressed: _join, child: const Text('Join Table')),
             ] else ...[
+              // ===== Joined: table header =====
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -362,9 +298,11 @@ class _CardTablePageState extends State<CardTablePage> {
                   Text('Players: ${_state?.players.join(", ") ?? ""}'),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text('Current turn: ${turn ?? "-"}'),
               const Divider(),
+
+              // ===== Pile =====
               const Text('Pile (latest last):'),
               const SizedBox(height: 8),
               Expanded(
@@ -379,40 +317,25 @@ class _CardTablePageState extends State<CardTablePage> {
                   },
                 ),
               ),
-              const SizedBox(height: 8),
               if (_loading) const LinearProgressIndicator(),
+
+              // ===== Player area =====
+              const SizedBox(height: 8),
               Text('You: $me'),
               const SizedBox(height: 6),
-              if (_myVisibleSix.isNotEmpty) ...[
+
+              // Visible six + reserve chooser (only when needed)
+              if (!_reserveConfirmed && _myVisibleSix.isNotEmpty && _myHand.isEmpty) ...[
                 const Text('Your 6 visible (pre-reserve):'),
+                const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
                   children: _myVisibleSix.map((c) => Chip(label: Text('${c.rank}${c.suit}'))).toList(),
                 ),
-                const SizedBox(height: 6),
-              ],
-              if (_blindMode) ...[
                 const SizedBox(height: 8),
-                const Text('Blind draw: pick one of your facedown cards'),
-                Wrap(
-                  spacing: 8,
-                  children: _blindSlots.map((i) {
-                    return ElevatedButton(
-                      onPressed: () async {
-                        setState(() => _loading = true);
-                        final ok = await _drawBlind(i);
-                        setState(() => _loading = false);
-                        await _refreshMyState();
-                        if (ok) await _autoReplenishHand(); // try to keep filling to 3
-                      },
-                      child: Text('Blind ${i + 1}'),
-                    );
-                  }).toList(),
-                ),
-              ],
-              if (_myVisibleSix.isNotEmpty) ...[
                 const Text('Choose 3 to reserve:'),
+                const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
@@ -438,16 +361,41 @@ class _CardTablePageState extends State<CardTablePage> {
                   onPressed: _myReserve.length == 3 && !_loading ? _confirmReserve : null,
                   child: const Text('Confirm reserve (3)'),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
               ],
+
+              // Blind draw UI (only when stack & reserve are empty)
+              if (_blindMode) ...[
+                const SizedBox(height: 8),
+                const Text('Blind draw: pick one of your facedown cards'),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  children: List.generate(3, (i) {
+                    return ElevatedButton(
+                      onPressed: () async {
+                        setState(() => _loading = true);
+                        final ok = await _drawBlind(i);
+                        setState(() => _loading = false);
+                        await _refreshMyState();
+                        if (ok) await _autoReplenishHand();
+                      },
+                      child: Text('Blind ${i + 1}'),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              // Hand + selection
               const Text('Your hand:'),
+              const SizedBox(height: 4),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: _myHand.map((c) {
                   final selected = _selectedCard != null && sameCard(_selectedCard!, c);
                   final legal = _isLegal(c);
-                  // Slightly dim illegal cards on your turn; normal brightness otherwise.
                   final dim = _isMyTurn && !legal;
                   return ChoiceChip(
                     label: Text('${c.rank}${c.suit}'),
@@ -458,7 +406,6 @@ class _CardTablePageState extends State<CardTablePage> {
                         _error = null;
                       });
                     },
-                    // simple styling feedback
                     avatar: _isMyTurn
                         ? (legal ? const Icon(Icons.check_circle_outline, size: 18) : const Icon(Icons.block, size: 18))
                         : null,
@@ -470,6 +417,8 @@ class _CardTablePageState extends State<CardTablePage> {
                 }).toList(),
               ),
               const Divider(),
+
+              // Play button
               ElevatedButton.icon(
                 onPressed: (_isMyTurn &&
                         _reserveConfirmed &&
@@ -479,14 +428,16 @@ class _CardTablePageState extends State<CardTablePage> {
                     ? _playSelected
                     : null,
                 icon: const Icon(Icons.play_arrow),
-                label:
-                    Text(_selectedCard == null ? 'Select a card' : 'Play ${_selectedCard!.rank}${_selectedCard!.suit}'),
+                label: Text(
+                  _selectedCard == null ? 'Select a card' : 'Play ${_selectedCard!.rank}${_selectedCard!.suit}',
+                ),
               ),
             ],
+
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(_error!, style: const TextStyle(color: Colors.red)),
-            ]
+            ],
           ],
         ),
       ),
