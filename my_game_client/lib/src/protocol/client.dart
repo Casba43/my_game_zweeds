@@ -15,8 +15,7 @@ import 'package:my_game_client/src/protocol/game_state.dart' as _i3;
 import 'package:my_game_client/src/protocol/draw_result.dart' as _i4;
 import 'package:my_game_client/src/protocol/card_model.dart' as _i5;
 import 'package:my_game_client/src/protocol/player_state.dart' as _i6;
-import 'package:my_game_client/src/protocol/greeting.dart' as _i7;
-import 'protocol.dart' as _i8;
+import 'protocol.dart' as _i7;
 
 /// {@category Endpoint}
 class EndpointGame extends _i1.EndpointRef {
@@ -138,24 +137,6 @@ class EndpointGame extends _i1.EndpointRef {
       );
 }
 
-/// This is an example endpoint that returns a greeting message through
-/// its [hello] method.
-/// {@category Endpoint}
-class EndpointGreeting extends _i1.EndpointRef {
-  EndpointGreeting(_i1.EndpointCaller caller) : super(caller);
-
-  @override
-  String get name => 'greeting';
-
-  /// Returns a personalized greeting message: "Hello {name}".
-  _i2.Future<_i7.Greeting> hello(String name) =>
-      caller.callServerEndpoint<_i7.Greeting>(
-        'greeting',
-        'hello',
-        {'name': name},
-      );
-}
-
 class Client extends _i1.ServerpodClientShared {
   Client(
     String host, {
@@ -172,7 +153,7 @@ class Client extends _i1.ServerpodClientShared {
     bool? disconnectStreamsOnLostInternetConnection,
   }) : super(
           host,
-          _i8.Protocol(),
+          _i7.Protocol(),
           securityContext: securityContext,
           authenticationKeyManager: authenticationKeyManager,
           streamingConnectionTimeout: streamingConnectionTimeout,
@@ -183,18 +164,12 @@ class Client extends _i1.ServerpodClientShared {
               disconnectStreamsOnLostInternetConnection,
         ) {
     game = EndpointGame(this);
-    greeting = EndpointGreeting(this);
   }
 
   late final EndpointGame game;
 
-  late final EndpointGreeting greeting;
-
   @override
-  Map<String, _i1.EndpointRef> get endpointRefLookup => {
-        'game': game,
-        'greeting': greeting,
-      };
+  Map<String, _i1.EndpointRef> get endpointRefLookup => {'game': game};
 
   @override
   Map<String, _i1.ModuleEndpointCaller> get moduleLookup => {};

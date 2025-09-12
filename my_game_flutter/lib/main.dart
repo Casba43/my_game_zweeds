@@ -66,19 +66,6 @@ class MyHomePageState extends State<MyHomePage> {
   /// Calls the `hello` method of the `greeting` endpoint. Will set either the
   /// `_resultMessage` or `_errorMessage` field, depending on if the call
   /// is successful.
-  void _callHello() async {
-    try {
-      final result = await client.greeting.hello(_textEditingController.text);
-      setState(() {
-        _errorMessage = null;
-        _resultMessage = result.message;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = '$e';
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,13 +80,6 @@ class MyHomePageState extends State<MyHomePage> {
               child: TextField(
                 controller: _textEditingController,
                 decoration: const InputDecoration(hintText: 'Enter your name'),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16.0),
-              child: ElevatedButton(
-                onPressed: _callHello,
-                child: const Text('Send to Server'),
               ),
             ),
             ResultDisplay(

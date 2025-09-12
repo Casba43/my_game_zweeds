@@ -11,8 +11,7 @@
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:serverpod/serverpod.dart' as _i1;
 import '../endpoints/game_endpoint.dart' as _i2;
-import '../greeting_endpoint.dart' as _i3;
-import 'package:my_game_server/src/generated/card_model.dart' as _i4;
+import 'package:my_game_server/src/generated/card_model.dart' as _i3;
 
 class Endpoints extends _i1.EndpointDispatch {
   @override
@@ -22,12 +21,8 @@ class Endpoints extends _i1.EndpointDispatch {
         ..initialize(
           server,
           'game',
-        ),
-      'greeting': _i3.GreetingEndpoint()
-        ..
-          server,
-          'greeting',
-        ),
+          null,
+        )
     };
     connectors['game'] = _i1.EndpointConnector(
       name: 'game',
@@ -168,7 +163,7 @@ class Endpoints extends _i1.EndpointDispatch {
             ),
             'reserve': _i1.ParameterDescription(
               name: 'reserve',
-              type: _i1.getType<List<_i4.CardModel>>(),
+              type: _i1.getType<List<_i3.CardModel>>(),
               nullable: false,
             ),
           },
@@ -222,7 +217,7 @@ class Endpoints extends _i1.EndpointDispatch {
             ),
             'card': _i1.ParameterDescription(
               name: 'card',
-              type: _i1.getType<_i4.CardModel>(),
+              type: _i1.getType<_i3.CardModel>(),
               nullable: false,
             ),
           },
@@ -258,30 +253,6 @@ class Endpoints extends _i1.EndpointDispatch {
             gameId: params['gameId'],
           ),
         ),
-      },
-    );
-    connectors['greeting'] = _i1.EndpointConnector(
-      name: 'greeting',
-      endpoint: endpoints['greeting']!,
-      methodConnectors: {
-        'hello': _i1.MethodConnector(
-          name: 'hello',
-          params: {
-            'name': _i1.ParameterDescription(
-              name: 'name',
-              type: _i1.getType<String>(),
-              nullable: false,
-            )
-          },
-          call: (
-            _i1.Session session,
-            Map<String, dynamic> params,
-          ) async =>
-              (endpoints['greeting'] as _i3.GreetingEndpoint).hello(
-            session,
-            params['name'],
-          ),
-        )
       },
     );
   }
