@@ -117,7 +117,7 @@ class _CardTablePageState extends State<CardTablePage> {
         _myVisibleSix = List<CardModel>.from(six);
         _stackCount = ps.stackCount;
         _reserveCount = ps.reserveCount;
-        _blindCount = ps.blindCount;
+        _blindCount = ps.blindCount; // <-- not *blindCount
       });
     } catch (_) {/* ignore transient */}
   }
@@ -272,11 +272,120 @@ class _CardTablePageState extends State<CardTablePage> {
     }
   }
 
+// Replace single selection
+// CardModel? _selectedCard;
+  final List<CardModel> _selected = [];
+
+  bool _sameCard(CardModel a, CardModel b) => a.rank == b.rank && a.suit == b.suit;
+
+// All selected cards must share the same normalized rank.
+  String? _selectedRank() {
+    if (_selected.isEmpty) return null;
+    final r = normRank(_selected.first.rank);
+    for (final c in _selected) {
+      if (normRank(c.rank) != r) return null;
+    }
+    return r;
+  }
+
+  bool _isLegalSingle(CardModel c) {
+    if (_state == null) return false;
+    return canPlayOnWithPile(pile: _state!.pile, candidate: c.rank);
+  }
+
+  bool _isLegalMulti() {
+    if (_state == null) return false;
+    if (_selected.isEmpty) return false;
+
+    final rank = _selectedRank();
+    if (rank == null) return false; // mixed ranks not allowed
+
+    // Multi-play is legal iff playing ONE of that rank is legal now.
+    // (Server will validate full move atomically.)
+    return canPlayOnWithPile(pile: _state!.pile, candidate: rank);
+  }
+
+  Future<void> _playSelectedMulti() async {
+    if (_state == null || _selected.isEmpty) return;
+    final me = _playerIdCtrl.text.trim();
+
+    // Re-fetch to ensure ownership (like before)
+    try {
+      final ps = await client.game.myState(gameId: _state!.gameId, playerId: me);
+
+      // Verify the user still has every selected card
+      for (final sel in _selected) {
+        final owned = ps.inHand.any((c) => c.rank == sel.rank && c.suit == sel.suit);
+        if (!owned) {
+          setState(() => _error = 'One of your selected cards is no longer in your hand.');
+          await _refreshMyState();
+          return;
+        }
+      }
+
+      if (!_isLegalMulti()) {
+        setState(() => _error = 'That rank cannot be played on the current top card.');
+        return;
+      }
+
+      // ⬇️ Recommended: add a server method that atomically plays multiple cards
+      // and enforces "same rank" & turn logic.
+      await client.game.playCards(
+        gameId: _state!.gameId,
+        playerId: me,
+        cards: _selected,
+      );
+
+      setState(() => _selected.clear());
+
+      await _refreshMyState();
+      await _autoReplenishHand();
+    } catch (e) {
+      setState(() => _error = 'Play failed: $e');
+    }
+  }
+
+  bool _hasAnyLegalMove() {
+    if (_state == null) return false;
+    for (final c in _myHand) {
+      if (_isLegalSingle(c)) return true;
+    }
+    return false;
+  }
+
+  Future<void> _takePileAndEndTurn() async {
+    if (_state == null) return;
+    final me = _playerIdCtrl.text.trim();
+    setState(() => _loading = true);
+    try {
+      // ⬇️ Implement server-side to move the entire pile to this player's hand,
+      // clear pile, advance turn, and (optionally) auto-draw up to 3.
+      await client.game.takePileAndEndTurn(
+        gameId: _state!.gameId,
+        playerId: me,
+      );
+
+      setState(() {
+        _selected.clear();
+        _error = null;
+      });
+
+      await _refreshMyState();
+      await _autoReplenishHand();
+    } catch (e) {
+      setState(() => _error = 'Couldn’t take pile: $e');
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
   /// ===================== BUILD =====================
   @override
   Widget build(BuildContext context) {
     final turn = _state?.currentPlayerId;
     final me = _playerIdCtrl.text.trim();
+    final canPlayNow = _isMyTurn && _reserveConfirmed && _isLegalMulti() && _myHand.isNotEmpty;
+    final canTakePile = _isMyTurn && _reserveConfirmed && !_hasAnyLegalMove();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Card Table')),
@@ -409,21 +518,39 @@ class _CardTablePageState extends State<CardTablePage> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
+// In the hand Wrap(), replace ChoiceChip with FilterChip-like selection
                 children: _myHand.map((c) {
-                  final selected = _selectedCard != null && sameCard(_selectedCard!, c);
-                  final legal = _isLegal(c);
-                  final dim = _isMyTurn && !legal;
-                  return ChoiceChip(
+                  final selected = _selected.any((s) => _sameCard(s, c));
+                  final legalSingle = _isLegalSingle(c);
+                  final dim = _isMyTurn && !legalSingle;
+
+                  return FilterChip(
                     label: Text('${c.rank}${c.suit}'),
                     selected: selected,
                     onSelected: (_) {
                       setState(() {
-                        _selectedCard = c;
                         _error = null;
+                        // Enforce same-rank multi-select:
+                        if (!selected) {
+                          // If first pick, or same rank as current picks → add
+                          if (_selected.isEmpty || normRank(c.rank) == _selectedRank()) {
+                            _selected.add(c);
+                          } else {
+                            // Switching rank: clear and start new selection with this card
+                            _selected
+                              ..clear()
+                              ..add(c);
+                          }
+                        } else {
+                          // Deselect this exact card
+                          _selected.removeWhere((s) => _sameCard(s, c));
+                        }
                       });
                     },
                     avatar: _isMyTurn
-                        ? (legal ? const Icon(Icons.check_circle_outline, size: 18) : const Icon(Icons.block, size: 18))
+                        ? (legalSingle
+                            ? const Icon(Icons.check_circle_outline, size: 18)
+                            : const Icon(Icons.block, size: 18))
                         : null,
                     labelStyle: TextStyle(
                       color: dim ? Colors.black54 : null,
@@ -435,24 +562,24 @@ class _CardTablePageState extends State<CardTablePage> {
               const Divider(),
 
               // Play button
+
               ElevatedButton.icon(
-                onPressed: (_isMyTurn &&
-                        _reserveConfirmed &&
-                        _selectedCard != null &&
-                        _isLegal(_selectedCard!) &&
-                        _myHand.isNotEmpty)
-                    ? _playSelected
-                    : null,
+                onPressed: canPlayNow ? _playSelectedMulti : null,
                 icon: const Icon(Icons.play_arrow),
                 label: Text(
-                  _selectedCard == null ? 'Select a card' : 'Play ${_selectedCard!.rank}${_selectedCard!.suit}',
+                  _selected.isEmpty ? 'Select cards' : 'Play ${_selected.length} × ${_selectedRank() ?? "-"}',
                 ),
               ),
-            ],
-
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: canTakePile ? _takePileAndEndTurn : null,
+                icon: const Icon(Icons.download), // “take”
+                label: const Text('No move — take pile'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+              ],
             ],
           ],
         ),

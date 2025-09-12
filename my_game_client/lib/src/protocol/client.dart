@@ -121,6 +121,34 @@ class EndpointGame extends _i1.EndpointRef {
         },
       );
 
+  _i2.Future<void> playCards({
+    required String gameId,
+    required String playerId,
+    required List<_i5.CardModel> cards,
+  }) =>
+      caller.callServerEndpoint<void>(
+        'game',
+        'playCards',
+        {
+          'gameId': gameId,
+          'playerId': playerId,
+          'cards': cards,
+        },
+      );
+
+  _i2.Future<void> takePileAndEndTurn({
+    required String gameId,
+    required String playerId,
+  }) =>
+      caller.callServerEndpoint<void>(
+        'game',
+        'takePileAndEndTurn',
+        {
+          'gameId': gameId,
+          'playerId': playerId,
+        },
+      );
+
   _i2.Future<void> playCard({
     required String gameId,
     required String playerId,

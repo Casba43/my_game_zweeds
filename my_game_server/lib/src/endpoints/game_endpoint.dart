@@ -297,6 +297,114 @@ class GameEndpoint extends Endpoint {
       ..blindCount = facedown.length;
   }
 
+  Future<void> playCards(
+    Session s, {
+    required String gameId,
+    required String playerId,
+    required List<CardModel> cards,
+  }) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final st = T.publicState;
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+
+    if (st.phase != 'playing') throw Exception('Not in playing phase');
+    if (st.currentPlayerId != playerId) throw Exception('Not your turn');
+    if (cards.isEmpty) throw Exception('No cards provided');
+
+    // Ownership & same-rank validation (normalized)
+    final want = List<CardModel>.from(cards);
+    if (!_isSubset(want, ps.inHand)) throw Exception('One or more cards are not in your hand');
+
+    final normRanks = want.map((c) => _normRank(c.rank)).toSet();
+    if (normRanks.length != 1) throw Exception('All played cards must have the same rank');
+
+    final playRank = normRanks.single;
+
+    // Pile legality (treat as playing one of this rank; your rule set decides)
+    if (!_isLegalOnPile(st.pile, playRank)) {
+      final eff = _effectiveTopRank(st.pile);
+      throw Exception('Illegal move on ${eff ?? 'empty pile'}');
+    }
+
+    // Apply atomically: remove all from hand, append to pile in given order
+    for (final c in want) {
+      ps.inHand.removeWhere((x) => _eq(x, c));
+    }
+    st.pile = [...st.pile, ...want];
+
+    // Replenish like your single-card flow
+    if (ps.inHand.isEmpty) {
+      if (ps.reserve.isNotEmpty) {
+        ps.inHand = List.of(ps.reserve);
+        ps.reserve = [];
+      } else {
+        final hidden = T.hiddenReal[playerId] ?? [];
+        if (hidden.isNotEmpty) {
+          ps.inHand = List.of(hidden);
+          T.hiddenReal[playerId] = [];
+        }
+      }
+    }
+    _syncCounts(T, playerId);
+
+    // Advance turn
+    _advanceTurn(T);
+
+    // Notify: emit last card as CardPlayed (keeps client compatible) + whole state
+    if (want.isNotEmpty) {
+      final last = want.last;
+      s.messages.postMessage(_chan(gameId), CardPlayed(gameId: gameId, playerId: playerId, card: last));
+    }
+    s.messages.postMessage(_chan(gameId), st);
+  }
+
+  Future<void> takePileAndEndTurn(
+    Session s, {
+    required String gameId,
+    required String playerId,
+  }) async {
+    final T = _tables[gameId] ?? (throw Exception('No such game'));
+    final st = T.publicState;
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+
+    if (st.phase != 'playing') throw Exception('Not in playing phase');
+    if (st.currentPlayerId != playerId) throw Exception('Not your turn');
+
+    // Server-side guard: ensure truly no legal move
+    if (_hasAnyLegalMove(T, playerId)) {
+      throw Exception('You still have a legal move');
+    }
+
+    // Take the pile (append to hand) and clear it
+    if (st.pile.isNotEmpty) {
+      ps.inHand = [...ps.inHand, ...st.pile];
+      st.pile = [];
+    }
+
+    _syncCounts(T, playerId);
+
+    // Advance turn
+    _advanceTurn(T);
+
+    // Notify (single state broadcast is enough)
+    s.messages.postMessage(_chan(gameId), st);
+  }
+
+  bool _hasAnyLegalMove(_TableMem T, String playerId) {
+    final st = T.publicState;
+    final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+    for (final c in ps.inHand) {
+      if (_isLegalOnPile(st.pile, c.rank)) return true;
+    }
+    return false;
+  }
+
+  void _advanceTurn(_TableMem T) {
+    final st = T.publicState;
+    final i = st.players.indexOf(st.currentPlayerId ?? '0');
+    st.currentPlayerId = st.players[(i + 1) % st.players.length];
+  }
+
   // Play a card from your hand, validate by rules, advance turn
   Future<void> playCard(Session s, {required String gameId, required String playerId, required CardModel card}) async {
     final T = _tables[gameId] ?? (throw Exception('No such game'));

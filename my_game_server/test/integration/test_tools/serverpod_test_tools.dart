@@ -394,6 +394,74 @@ class _GameEndpoint {
     });
   }
 
+  _i3.Future<void> playCards(
+    _i1.TestSessionBuilder sessionBuilder, {
+    required String gameId,
+    required String playerId,
+    required List<_i6.CardModel> cards,
+  }) async {
+    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
+      var _localUniqueSession =
+          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
+        endpoint: 'game',
+        method: 'playCards',
+      );
+      try {
+        var _localCallContext = await _endpointDispatch.getMethodCallContext(
+          createSessionCallback: (_) => _localUniqueSession,
+          endpointPath: 'game',
+          methodName: 'playCards',
+          parameters: _i1.testObjectToJson({
+            'gameId': gameId,
+            'playerId': playerId,
+            'cards': cards,
+          }),
+          serializationManager: _serializationManager,
+        );
+        var _localReturnValue = await (_localCallContext.method.call(
+          _localUniqueSession,
+          _localCallContext.arguments,
+        ) as _i3.Future<void>);
+        return _localReturnValue;
+      } finally {
+        await _localUniqueSession.close();
+      }
+    });
+  }
+
+  _i3.Future<void> takePileAndEndTurn(
+    _i1.TestSessionBuilder sessionBuilder, {
+    required String gameId,
+    required String playerId,
+  }) async {
+    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
+      var _localUniqueSession =
+          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
+        endpoint: 'game',
+        method: 'takePileAndEndTurn',
+      );
+      try {
+        var _localCallContext = await _endpointDispatch.getMethodCallContext(
+          createSessionCallback: (_) => _localUniqueSession,
+          endpointPath: 'game',
+          methodName: 'takePileAndEndTurn',
+          parameters: _i1.testObjectToJson({
+            'gameId': gameId,
+            'playerId': playerId,
+          }),
+          serializationManager: _serializationManager,
+        );
+        var _localReturnValue = await (_localCallContext.method.call(
+          _localUniqueSession,
+          _localCallContext.arguments,
+        ) as _i3.Future<void>);
+        return _localReturnValue;
+      } finally {
+        await _localUniqueSession.close();
+      }
+    });
+  }
+
   _i3.Future<void> playCard(
     _i1.TestSessionBuilder sessionBuilder, {
     required String gameId,

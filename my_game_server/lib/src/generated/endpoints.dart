@@ -202,6 +202,60 @@ class Endpoints extends _i1.EndpointDispatch {
             playerId: params['playerId'],
           ),
         ),
+        'playCards': _i1.MethodConnector(
+          name: 'playCards',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'cards': _i1.ParameterDescription(
+              name: 'cards',
+              type: _i1.getType<List<_i3.CardModel>>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).playCards(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+            cards: params['cards'],
+          ),
+        ),
+        'takePileAndEndTurn': _i1.MethodConnector(
+          name: 'takePileAndEndTurn',
+          params: {
+            'gameId': _i1.ParameterDescription(
+              name: 'gameId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+            'playerId': _i1.ParameterDescription(
+              name: 'playerId',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call: (
+            _i1.Session session,
+            Map<String, dynamic> params,
+          ) async =>
+              (endpoints['game'] as _i2.GameEndpoint).takePileAndEndTurn(
+            session,
+            gameId: params['gameId'],
+            playerId: params['playerId'],
+          ),
+        ),
         'playCard': _i1.MethodConnector(
           name: 'playCard',
           params: {
