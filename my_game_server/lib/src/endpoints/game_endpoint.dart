@@ -135,23 +135,18 @@ class GameEndpoint extends Endpoint {
         changed = true;
         continue;
       }
-      if (ps.reserve.isNotEmpty) {
-        ps.inHand.add(ps.reserve.removeLast());
-        changed = true;
-        continue;
-      }
-      break; // Only facedown left -> blind pick phase
+      break; // No deck cards -> stop. Do NOT draw from reserve here.
     }
 
     final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
-    final needsBlindPick = ps.inHand.length < 3 && facedown.isNotEmpty;
+    final needsBlindPick = ps.inHand.length < 3 && T.deck.isEmpty && ps.reserve.isEmpty && facedown.isNotEmpty;
 
     // keep counts current for myState()
     ps
       ..stackCount = T.deck.length
       ..reserveCount = ps.reserve.length
       ..blindCount = facedown.length;
-    _syncCounts(T, playerId); // NEW
+    _syncCounts(T, playerId);
 
     if (changed) s.messages.postMessage(_chan(gameId), T.publicState);
 
@@ -191,14 +186,10 @@ class GameEndpoint extends Endpoint {
 
     ps.inHand.add(facedown.removeAt(index));
 
-    // Immediately try to top-up again from deck/reserve
+// Try to top-up again ONLY from deck
     while (ps.inHand.length < 3) {
       if (T.deck.isNotEmpty) {
         ps.inHand.add(T.deck.removeLast());
-        continue;
-      }
-      if (ps.reserve.isNotEmpty) {
-        ps.inHand.add(ps.reserve.removeLast());
         continue;
       }
       break;
@@ -208,18 +199,30 @@ class GameEndpoint extends Endpoint {
       ..stackCount = T.deck.length
       ..reserveCount = ps.reserve.length
       ..blindCount = facedown.length;
-    _syncCounts(T, playerId); // NEW
+    _syncCounts(T, playerId);
 
     s.messages.postMessage(_chan(gameId), T.publicState);
 
     return DrawResult(
       changed: true,
-      needsBlindPick: ps.inHand.length < 3 && facedown.isNotEmpty,
+      needsBlindPick: ps.inHand.length < 3 && T.deck.isEmpty && ps.reserve.isEmpty && facedown.isNotEmpty,
       handSize: ps.inHand.length,
       stackCount: ps.stackCount,
       reserveCount: ps.reserveCount,
       blindCount: ps.blindCount,
     );
+  }
+
+  void _maybeRevealReserveAfterPlay(_TableMem T, String playerId, {required int preHand}) {
+    final ps = T.playerStates[playerId]!;
+    // Condition: deck empty AND hand went from exactly 3 -> 0 by playing
+    final shouldReveal = T.deck.isEmpty && preHand == 3 && ps.inHand.isEmpty && ps.reserve.isNotEmpty;
+    if (shouldReveal) {
+      // Reveal reserve: moves to hand, becomes playable/visible
+      ps.inHand = List.of(ps.reserve);
+      ps.reserve = [];
+      _syncCounts(T, playerId);
+    }
   }
 
   // === Stream public state & events ===
@@ -337,27 +340,19 @@ class GameEndpoint extends Endpoint {
       final eff = _effectiveTopRank(st.pile);
       throw Exception('Illegal move on ${eff ?? 'empty pile'}');
     }
+    final preHand = ps.inHand.length;
 
-    // Apply: remove all from hand, push to pile
+// remove all selected, push to pile
     for (final c in want) {
       ps.inHand.removeWhere((x) => _eq(x, c));
     }
     st.pile = [...st.pile, ...want];
 
-    // Replenish (same as your single-card flow)
-    if (ps.inHand.isEmpty) {
-      if (ps.reserve.isNotEmpty) {
-        ps.inHand = List.of(ps.reserve);
-        ps.reserve = [];
-      } else {
-        final hidden = T.hiddenReal[playerId] ?? [];
-        if (hidden.isNotEmpty) {
-          ps.inHand = List.of(hidden);
-          T.hiddenReal[playerId] = [];
-        }
-      }
-    }
+// Do NOT auto-pull reserve here
     _syncCounts(T, playerId);
+
+// Reveal reserve only if rule is satisfied
+    _maybeRevealReserveAfterPlay(T, playerId, preHand: preHand);
 
     // Specials: burn / skip handling
     final res = _applySpecialsAfterPlay(
@@ -528,25 +523,14 @@ class GameEndpoint extends Endpoint {
       throw Exception('Illegal move on ${eff ?? 'empty pile'}');
     }
     if (!ps.inHand.any((c) => _eq(c, card))) throw Exception('You don\'t have that card');
+    final preHand = ps.inHand.length;
 
     // Apply
     ps.inHand.removeWhere((c) => _eq(c, card));
     st.pile = [...st.pile, card];
 
-    // Replenish like before
-    if (ps.inHand.isEmpty) {
-      if (ps.reserve.isNotEmpty) {
-        ps.inHand = List.of(ps.reserve);
-        ps.reserve = [];
-      } else {
-        final hidden = T.hiddenReal[playerId] ?? [];
-        if (hidden.isNotEmpty) {
-          ps.inHand = List.of(hidden);
-          T.hiddenReal[playerId] = [];
-        }
-      }
-    }
     _syncCounts(T, playerId);
+    _maybeRevealReserveAfterPlay(T, playerId, preHand: preHand);
 
     // Specials
     final res = _applySpecialsAfterPlay(
