@@ -53,7 +53,7 @@ class GameEndpoint extends Endpoint {
   static String _chan(String gameId) => 'game-$gameId';
 
   // === Lobby / join ===
-  Future<GameState> join(Session s, {required String gameId, required String playerId}) async {
+  Future<GameState> join(Session session, {required String gameId, required String playerId}) async {
     var T = _tables[gameId];
     if (T == null) {
       final st = GameState(
@@ -69,7 +69,7 @@ class GameEndpoint extends Endpoint {
         T.publicState.players = [...T.publicState.players, playerId];
       }
     }
-    s.messages.postMessage(_chan(gameId), T.publicState);
+    session.messages.postMessage(_chan(gameId), T.publicState);
     return T.publicState;
   }
 
