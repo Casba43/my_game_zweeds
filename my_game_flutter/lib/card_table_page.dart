@@ -79,7 +79,9 @@ class _CardTablePageState extends State<CardTablePage> {
   bool _blindMode = false; // true when stack & reserve are empty
   bool _loading = false;
   String? _error;
-
+  int _stackCount = 0; // draw stack (public)
+  int _reserveCount = 0; // your reserve (private)
+  int _blindCount = 0; // your facedown (private)
   CardModel? _selectedCard;
   bool sameCard(CardModel a, CardModel b) => a.rank == b.rank && a.suit == b.suit;
 
@@ -113,6 +115,9 @@ class _CardTablePageState extends State<CardTablePage> {
       setState(() {
         _myHand = List<CardModel>.from(ps.inHand);
         _myVisibleSix = List<CardModel>.from(six);
+        _stackCount = ps.stackCount;
+        _reserveCount = ps.reserveCount;
+        _blindCount = ps.blindCount;
       });
     } catch (_) {/* ignore transient */}
   }
@@ -389,7 +394,15 @@ class _CardTablePageState extends State<CardTablePage> {
                 ),
                 const SizedBox(height: 8),
               ],
-
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Chip(label: Text('Draw stack: $_stackCount')),
+                  Chip(label: Text('Your reserve: $_reserveCount')),
+                  Chip(label: Text('Your facedown: $_blindCount')),
+                ],
+              ),
+              const SizedBox(height: 6),
               // Hand + selection
               const Text('Your hand:'),
               const SizedBox(height: 4),

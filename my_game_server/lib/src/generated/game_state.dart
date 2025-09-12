@@ -17,17 +17,19 @@ abstract class GameState
   GameState._({
     required this.gameId,
     required this.players,
-    required this.currentPlayerId,
+    this.currentPlayerId,
     required this.pile,
     required this.phase,
+    required this.drawStackCount,
   });
 
   factory GameState({
     required String gameId,
     required List<String> players,
-    required String currentPlayerId,
+    String? currentPlayerId,
     required List<_i2.CardModel> pile,
     required String phase,
+    required int drawStackCount,
   }) = _GameStateImpl;
 
   factory GameState.fromJson(Map<String, dynamic> jsonSerialization) {
@@ -36,11 +38,12 @@ abstract class GameState
       players: (jsonSerialization['players'] as List)
           .map((e) => e as String)
           .toList(),
-      currentPlayerId: jsonSerialization['currentPlayerId'] as String,
+      currentPlayerId: jsonSerialization['currentPlayerId'] as String?,
       pile: (jsonSerialization['pile'] as List)
           .map((e) => _i2.CardModel.fromJson((e as Map<String, dynamic>)))
           .toList(),
       phase: jsonSerialization['phase'] as String,
+      drawStackCount: jsonSerialization['drawStackCount'] as int,
     );
   }
 
@@ -48,11 +51,13 @@ abstract class GameState
 
   List<String> players;
 
-  String currentPlayerId;
+  String? currentPlayerId;
 
   List<_i2.CardModel> pile;
 
   String phase;
+
+  int drawStackCount;
 
   /// Returns a shallow copy of this [GameState]
   /// with some or all fields replaced by the given arguments.
@@ -63,15 +68,17 @@ abstract class GameState
     String? currentPlayerId,
     List<_i2.CardModel>? pile,
     String? phase,
+    int? drawStackCount,
   });
   @override
   Map<String, dynamic> toJson() {
     return {
       'gameId': gameId,
       'players': players.toJson(),
-      'currentPlayerId': currentPlayerId,
+      if (currentPlayerId != null) 'currentPlayerId': currentPlayerId,
       'pile': pile.toJson(valueToJson: (v) => v.toJson()),
       'phase': phase,
+      'drawStackCount': drawStackCount,
     };
   }
 
@@ -80,9 +87,10 @@ abstract class GameState
     return {
       'gameId': gameId,
       'players': players.toJson(),
-      'currentPlayerId': currentPlayerId,
+      if (currentPlayerId != null) 'currentPlayerId': currentPlayerId,
       'pile': pile.toJson(valueToJson: (v) => v.toJsonForProtocol()),
       'phase': phase,
+      'drawStackCount': drawStackCount,
     };
   }
 
@@ -92,19 +100,23 @@ abstract class GameState
   }
 }
 
+class _Undefined {}
+
 class _GameStateImpl extends GameState {
   _GameStateImpl({
     required String gameId,
     required List<String> players,
-    required String currentPlayerId,
+    String? currentPlayerId,
     required List<_i2.CardModel> pile,
     required String phase,
+    required int drawStackCount,
   }) : super._(
           gameId: gameId,
           players: players,
           currentPlayerId: currentPlayerId,
           pile: pile,
           phase: phase,
+          drawStackCount: drawStackCount,
         );
 
   /// Returns a shallow copy of this [GameState]
@@ -114,16 +126,19 @@ class _GameStateImpl extends GameState {
   GameState copyWith({
     String? gameId,
     List<String>? players,
-    String? currentPlayerId,
+    Object? currentPlayerId = _Undefined,
     List<_i2.CardModel>? pile,
     String? phase,
+    int? drawStackCount,
   }) {
     return GameState(
       gameId: gameId ?? this.gameId,
       players: players ?? this.players.map((e0) => e0).toList(),
-      currentPlayerId: currentPlayerId ?? this.currentPlayerId,
+      currentPlayerId:
+          currentPlayerId is String? ? currentPlayerId : this.currentPlayerId,
       pile: pile ?? this.pile.map((e0) => e0.copyWith()).toList(),
       phase: phase ?? this.phase,
+      drawStackCount: drawStackCount ?? this.drawStackCount,
     );
   }
 }

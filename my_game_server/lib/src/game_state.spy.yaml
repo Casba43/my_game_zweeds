@@ -2,6 +2,7 @@ class: GameState
 fields:
   gameId: String
   players: List<String>
-  currentPlayerId: String
+  currentPlayerId: String?
   pile: List<CardModel>
   phase: String
+  drawStackCount: int

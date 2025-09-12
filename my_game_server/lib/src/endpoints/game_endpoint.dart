@@ -13,21 +13,37 @@ String _normRank(String r) {
 const _ranksOrder = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker', 'S'];
 
 const Map<String, List<String>> _ruleSetStandard = {
-  '2': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '3': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '4': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '5': ['2', '3', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '6': ['2', '3', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '7': ['2', '3', '4', '5', '6', '7', 'S'],
-  '8': ['3', '2', '8', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '9': ['3', '2', '9', '10', 'J', 'Q', 'K', 'A', 'S'],
-  '10': ['3', '2', '10', 'J', 'Q', 'K', 'A', 'S'],
-  'J': ['3', '2', 'J', 'Q', 'K', 'A', 'S'],
-  'Q': ['3', '2', 'Q', 'K', 'A', 'S'],
-  'K': ['3', '2', 'K', 'A', 'S'],
-  'A': ['3', '2', 'A', 'S'],
+  '2': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '3': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '4': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '5': ['2', '3', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '6': ['2', '3', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '7': ['2', '3', '4', '5', '6', '7', 'Joker'],
+  '8': ['2', '3', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '9': ['2', '3', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  '10': ['2', '3', '10', 'J', 'Q', 'K', 'A', 'Joker'],
+  'J': ['2', '3', 'J', 'Q', 'K', 'A', 'Joker'],
+  'Q': ['2', '3', 'J', 'Q', 'K', 'A', 'Joker'],
+  'K': ['2', '3', 'K', 'A', 'Joker'],
+  'A': ['2', '3', 'A', 'Joker'],
   'Joker': ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'Joker'],
 };
+String? _effectiveTopRank(List<CardModel> pile) {
+  for (int i = pile.length - 1; i >= 0; i--) {
+    final r = _normRank(pile[i].rank);
+    if (r != '3' && r != 'Joker') return r;
+  }
+  return null;
+}
+
+bool _isLegalOnPile(List<CardModel> pile, String candidate) {
+  final c = _normRank(candidate);
+  if (c == '3' || c == 'Joker') return true; // wild & invisible
+  final eff = _effectiveTopRank(pile);
+  if (eff == null) return true; // pile empty or only invisibles
+  final allowed = _ruleSetStandard[eff];
+  return allowed?.contains(c) ?? false;
+}
 
 bool _canPlayOn({required String top, required String candidate}) {
   final t = _normRank(top);
@@ -62,6 +78,7 @@ class GameEndpoint extends Endpoint {
         currentPlayerId: playerId,
         pile: [],
         phase: 'lobby',
+        drawStackCount: 0,
       );
       T = _tables[gameId] = _TableMem(st, {}, {}, _buildDeck()..shuffle(Random()));
     } else {
@@ -121,6 +138,7 @@ class GameEndpoint extends Endpoint {
       ..stackCount = T.deck.length
       ..reserveCount = ps.reserve.length
       ..blindCount = facedown.length;
+    _syncCounts(T, playerId); // NEW
 
     if (changed) s.messages.postMessage(_chan(gameId), T.publicState);
 
@@ -177,6 +195,7 @@ class GameEndpoint extends Endpoint {
       ..stackCount = T.deck.length
       ..reserveCount = ps.reserve.length
       ..blindCount = facedown.length;
+    _syncCounts(T, playerId); // NEW
 
     s.messages.postMessage(_chan(gameId), T.publicState);
 
@@ -223,6 +242,7 @@ class GameEndpoint extends Endpoint {
         blindCount: 0,
       );
       T.sixVisible[p] = visible;
+      _syncCounts(T, p);
     }
 
     T.publicState.phase = 'selecting';
@@ -250,6 +270,7 @@ class GameEndpoint extends Endpoint {
     ps.reserve = List.of(reserve);
     ps.inHand = inHand;
     T.sixVisible.remove(playerId);
+    _syncCounts(T, playerId);
 
     // if all players have chosen, enter "playing"
     final allReady = T.publicState.players.every((p) => (T.playerStates[p]?.inHand.isNotEmpty ?? false));
@@ -263,7 +284,17 @@ class GameEndpoint extends Endpoint {
   Future<PlayerState> myState(Session s, {required String gameId, required String playerId}) async {
     final T = _tables[gameId] ?? (throw Exception('No such game'));
     final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+    _syncCounts(T, playerId);
     return ps;
+  }
+
+  void _syncCounts(_TableMem T, String playerId) {
+    final ps = T.playerStates[playerId]!;
+    final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
+    ps
+      ..stackCount = T.deck.length
+      ..reserveCount = ps.reserve.length
+      ..blindCount = facedown.length;
   }
 
   // Play a card from your hand, validate by rules, advance turn
@@ -271,7 +302,10 @@ class GameEndpoint extends Endpoint {
     final T = _tables[gameId] ?? (throw Exception('No such game'));
     final st = T.publicState;
     final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
-
+    if (!_isLegalOnPile(st.pile, card.rank)) {
+      final eff = _effectiveTopRank(st.pile);
+      throw Exception('Illegal move on ${eff ?? 'empty pile'}');
+    }
     if (st.phase != 'playing') throw Exception('Not in playing phase');
     if (st.currentPlayerId != playerId) throw Exception('Not your turn');
 
@@ -303,6 +337,7 @@ class GameEndpoint extends Endpoint {
         }
       }
     }
+    _syncCounts(T, playerId); // NEW
 
     // next turn
     final i = st.players.indexOf(playerId);
