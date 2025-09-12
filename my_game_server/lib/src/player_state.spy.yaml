@@ -1,6 +1,8 @@
 class: PlayerState
 fields:
-  playerId: String
   inHand: List<CardModel>
-  reserve: List<CardModel>     # chosen face-up (visible to owner; public if you want)
-  hiddenCount: int
+  reserve: List<CardModel>     # player's 3-card reserve (face-up or stored)
+  facedown: List<CardModel>    # player's 3 blind cards (face-down)
+  stackCount: int              # remaining in table stack
+  reserveCount: int
+  blindCount: int

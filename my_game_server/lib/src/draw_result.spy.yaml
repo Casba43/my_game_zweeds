@@ -1,0 +1,9 @@
+# protocol/draw_result.yaml
+class: DrawResult
+fields:
+  changed: bool
+  needsBlindPick: bool
+  handSize: int
+  stackCount: int
+  reserveCount: int
+  blindCount: int

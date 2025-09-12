@@ -15,66 +15,84 @@ import 'card_model.dart' as _i2;
 abstract class PlayerState
     implements _i1.SerializableModel, _i1.ProtocolSerialization {
   PlayerState._({
-    required this.playerId,
     required this.inHand,
     required this.reserve,
-    required this.hiddenCount,
+    required this.facedown,
+    required this.stackCount,
+    required this.reserveCount,
+    required this.blindCount,
   });
 
   factory PlayerState({
-    required String playerId,
     required List<_i2.CardModel> inHand,
     required List<_i2.CardModel> reserve,
-    required int hiddenCount,
+    required List<_i2.CardModel> facedown,
+    required int stackCount,
+    required int reserveCount,
+    required int blindCount,
   }) = _PlayerStateImpl;
 
   factory PlayerState.fromJson(Map<String, dynamic> jsonSerialization) {
     return PlayerState(
-      playerId: jsonSerialization['playerId'] as String,
       inHand: (jsonSerialization['inHand'] as List)
           .map((e) => _i2.CardModel.fromJson((e as Map<String, dynamic>)))
           .toList(),
       reserve: (jsonSerialization['reserve'] as List)
           .map((e) => _i2.CardModel.fromJson((e as Map<String, dynamic>)))
           .toList(),
-      hiddenCount: jsonSerialization['hiddenCount'] as int,
+      facedown: (jsonSerialization['facedown'] as List)
+          .map((e) => _i2.CardModel.fromJson((e as Map<String, dynamic>)))
+          .toList(),
+      stackCount: jsonSerialization['stackCount'] as int,
+      reserveCount: jsonSerialization['reserveCount'] as int,
+      blindCount: jsonSerialization['blindCount'] as int,
     );
   }
-
-  String playerId;
 
   List<_i2.CardModel> inHand;
 
   List<_i2.CardModel> reserve;
 
-  int hiddenCount;
+  List<_i2.CardModel> facedown;
+
+  int stackCount;
+
+  int reserveCount;
+
+  int blindCount;
 
   /// Returns a shallow copy of this [PlayerState]
   /// with some or all fields replaced by the given arguments.
   @_i1.useResult
   PlayerState copyWith({
-    String? playerId,
     List<_i2.CardModel>? inHand,
     List<_i2.CardModel>? reserve,
-    int? hiddenCount,
+    List<_i2.CardModel>? facedown,
+    int? stackCount,
+    int? reserveCount,
+    int? blindCount,
   });
   @override
   Map<String, dynamic> toJson() {
     return {
-      'playerId': playerId,
       'inHand': inHand.toJson(valueToJson: (v) => v.toJson()),
       'reserve': reserve.toJson(valueToJson: (v) => v.toJson()),
-      'hiddenCount': hiddenCount,
+      'facedown': facedown.toJson(valueToJson: (v) => v.toJson()),
+      'stackCount': stackCount,
+      'reserveCount': reserveCount,
+      'blindCount': blindCount,
     };
   }
 
   @override
   Map<String, dynamic> toJsonForProtocol() {
     return {
-      'playerId': playerId,
       'inHand': inHand.toJson(valueToJson: (v) => v.toJsonForProtocol()),
       'reserve': reserve.toJson(valueToJson: (v) => v.toJsonForProtocol()),
-      'hiddenCount': hiddenCount,
+      'facedown': facedown.toJson(valueToJson: (v) => v.toJsonForProtocol()),
+      'stackCount': stackCount,
+      'reserveCount': reserveCount,
+      'blindCount': blindCount,
     };
   }
 
@@ -86,15 +104,19 @@ abstract class PlayerState
 
 class _PlayerStateImpl extends PlayerState {
   _PlayerStateImpl({
-    required String playerId,
     required List<_i2.CardModel> inHand,
     required List<_i2.CardModel> reserve,
-    required int hiddenCount,
+    required List<_i2.CardModel> facedown,
+    required int stackCount,
+    required int reserveCount,
+    required int blindCount,
   }) : super._(
-          playerId: playerId,
           inHand: inHand,
           reserve: reserve,
-          hiddenCount: hiddenCount,
+          facedown: facedown,
+          stackCount: stackCount,
+          reserveCount: reserveCount,
+          blindCount: blindCount,
         );
 
   /// Returns a shallow copy of this [PlayerState]
@@ -102,16 +124,20 @@ class _PlayerStateImpl extends PlayerState {
   @_i1.useResult
   @override
   PlayerState copyWith({
-    String? playerId,
     List<_i2.CardModel>? inHand,
     List<_i2.CardModel>? reserve,
-    int? hiddenCount,
+    List<_i2.CardModel>? facedown,
+    int? stackCount,
+    int? reserveCount,
+    int? blindCount,
   }) {
     return PlayerState(
-      playerId: playerId ?? this.playerId,
       inHand: inHand ?? this.inHand.map((e0) => e0.copyWith()).toList(),
       reserve: reserve ?? this.reserve.map((e0) => e0.copyWith()).toList(),
-      hiddenCount: hiddenCount ?? this.hiddenCount,
+      facedown: facedown ?? this.facedown.map((e0) => e0.copyWith()).toList(),
+      stackCount: stackCount ?? this.stackCount,
+      reserveCount: reserveCount ?? this.reserveCount,
+      blindCount: blindCount ?? this.blindCount,
     );
   }
 }

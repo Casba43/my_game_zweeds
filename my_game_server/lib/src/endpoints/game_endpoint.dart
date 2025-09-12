@@ -1,4 +1,5 @@
 import 'package:serverpod/serverpod.dart';
+import '../game/game_store.dart';
 import '../generated/protocol.dart';
 import 'dart:math';
 
@@ -73,6 +74,96 @@ class GameEndpoint extends Endpoint {
     return T.publicState;
   }
 
+  GameTable _table(String gameId) => GameStore.I.getOrCreate(gameId);
+
+  Future<DrawResult> drawUpToThree(
+    Session session, {
+    required String gameId,
+    required String playerId,
+  }) async {
+    final table = _table(gameId);
+    final p = table.playerById(playerId);
+
+    bool changed = false;
+
+    // try to keep 3 cards in hand: stack -> reserve
+    while (p.inHand.length < 3) {
+      if (table.stack.isNotEmpty) {
+        p.inHand.add(table.stack.removeLast());
+        changed = true;
+        continue;
+      }
+      if (p.reserve.isNotEmpty) {
+        p.inHand.add(p.reserve.removeLast());
+        changed = true;
+        continue;
+      }
+      break; // nothing left except blind
+    }
+
+    final needsBlindPick = p.inHand.length < 3 && p.facedown.isNotEmpty;
+
+    if (changed) table.broadcastState();
+
+    return DrawResult(
+      changed: changed,
+      needsBlindPick: needsBlindPick,
+      handSize: p.inHand.length,
+      stackCount: table.stack.length,
+      reserveCount: p.reserve.length,
+      blindCount: p.facedown.length,
+    );
+  }
+
+  Future<DrawResult> drawBlindTopDown(
+    Session session, {
+    required String gameId,
+    required String playerId,
+    required int index, // 0..2 (topmost is 0)
+  }) async {
+    final table = _table(gameId);
+    final p = table.playerById(playerId);
+
+    if (p.facedown.isEmpty) {
+      return DrawResult(
+        changed: false,
+        needsBlindPick: false,
+        handSize: p.inHand.length,
+        stackCount: table.stack.length,
+        reserveCount: p.reserve.length,
+        blindCount: p.facedown.length,
+      );
+    }
+    if (index < 0 || index >= p.facedown.length) {
+      throw ArgumentError('Invalid blind index');
+    }
+
+    p.inHand.add(p.facedown.removeAt(index));
+    // after blind, try topping up again (stack -> reserve)
+    while (p.inHand.length < 3) {
+      if (table.stack.isNotEmpty) {
+        p.inHand.add(table.stack.removeLast());
+        continue;
+      }
+      if (p.reserve.isNotEmpty) {
+        p.inHand.add(p.reserve.removeLast());
+        continue;
+      }
+      break;
+    }
+
+    table.broadcastState();
+
+    return DrawResult(
+      changed: true,
+      needsBlindPick: p.inHand.length < 3 && p.facedown.isNotEmpty,
+      handSize: p.inHand.length,
+      stackCount: table.stack.length,
+      reserveCount: p.reserve.length,
+      blindCount: p.facedown.length,
+    );
+  }
+
   // === Stream public state & events ===
   Stream<dynamic> events(Session s, {required String gameId}) async* {
     final T = _tables[gameId];
@@ -98,10 +189,12 @@ class GameEndpoint extends Endpoint {
 
       T.hiddenReal[p] = hidden;
       T.playerStates[p] = PlayerState(
-        playerId: p,
         inHand: [],
         reserve: [],
-        hiddenCount: hidden.length,
+        facedown: [],
+        stackCount: 0,
+        reserveCount: 0,
+        blindCount: 0,
       );
       T.sixVisible[p] = visible;
     }
@@ -181,7 +274,6 @@ class GameEndpoint extends Endpoint {
         if (hidden.isNotEmpty) {
           ps.inHand = List.of(hidden);
           T.hiddenReal[playerId] = [];
-          ps.hiddenCount = 0;
         }
       }
     }
