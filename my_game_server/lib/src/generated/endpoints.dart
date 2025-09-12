@@ -22,13 +22,11 @@ class Endpoints extends _i1.EndpointDispatch {
         ..initialize(
           server,
           'game',
-          null,
         ),
       'greeting': _i3.GreetingEndpoint()
         ..
           server,
           'greeting',
-          null,
         ),
     };
     connectors['game'] = _i1.EndpointConnector(
