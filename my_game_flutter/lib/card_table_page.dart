@@ -120,6 +120,7 @@ class _CardTablePageState extends State<CardTablePage> {
   /// Ask server to keep our hand at 3 (stack -> reserve -> blind).
   Future<void> _autoReplenishHand() async {
     if (_state == null) return;
+    if (!_canTopUp) return; // ⬅️ prevent top-up during 'selecting'
     try {
       final res = await client.game.drawUpToThree(
         gameId: _state!.gameId,
@@ -144,6 +145,8 @@ class _CardTablePageState extends State<CardTablePage> {
       return false;
     }
   }
+
+  bool get _canTopUp => _reserveConfirmed && (_state?.phase == 'playing');
 
   /// ======== FLOWS ========
   Future<void> _join() async {

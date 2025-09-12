@@ -80,6 +80,21 @@ class GameEndpoint extends Endpoint {
   }) async {
     final T = _tables[gameId] ?? (throw Exception('No such game'));
     final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+    if (T.publicState.phase != 'playing') {
+      final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
+      ps
+        ..stackCount = T.deck.length
+        ..reserveCount = ps.reserve.length
+        ..blindCount = facedown.length;
+      return DrawResult(
+        changed: false,
+        needsBlindPick: false,
+        handSize: ps.inHand.length,
+        stackCount: ps.stackCount,
+        reserveCount: ps.reserveCount,
+        blindCount: ps.blindCount,
+      );
+    }
 
     bool changed = false;
 
