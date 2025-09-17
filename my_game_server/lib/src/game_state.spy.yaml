@@ -6,3 +6,4 @@ fields:
   pile: List<CardModel>
   phase: String
   drawStackCount: int
+  graveyardCount: int

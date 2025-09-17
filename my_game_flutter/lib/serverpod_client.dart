@@ -1,5 +1,5 @@
-import 'package:serverpod_flutter/serverpod_flutter.dart';
 import 'package:my_game_client/my_game_client.dart';
+import 'package:serverpod_flutter/serverpod_flutter.dart';
 
 late final Client client;
 

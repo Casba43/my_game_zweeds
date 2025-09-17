@@ -69,6 +69,7 @@ class _TableMem {
   final Map<String, List<CardModel>> hiddenReal;
   final Map<String, List<CardModel>> sixVisible;
   List<CardModel> deck;
+  int direction = 1;
 
   // NEW: server-side discard pile; not exposed publicly (unless you want to)
   final List<CardModel> graveyard = [];
@@ -92,6 +93,7 @@ class GameEndpoint extends Endpoint {
         pile: [],
         phase: 'lobby',
         drawStackCount: 0,
+        graveyardCount: 0,
       );
       T = _tables[gameId] = _TableMem(st, {}, {}, _buildDeck()..shuffle(Random()));
     } else {
@@ -110,6 +112,8 @@ class GameEndpoint extends Endpoint {
   }) async {
     final T = _tables[gameId] ?? (throw Exception('No such game'));
     final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+
+    // Not in playing phase → just return counts
     if (T.publicState.phase != 'playing') {
       final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
       ps
@@ -128,20 +132,22 @@ class GameEndpoint extends Endpoint {
 
     bool changed = false;
 
-    // Top up to 3: deck (table stack) -> player reserve
+    // Top-up ONLY from deck
     while (ps.inHand.length < 3) {
       if (T.deck.isNotEmpty) {
         ps.inHand.add(T.deck.removeLast());
         changed = true;
         continue;
       }
-      break; // No deck cards -> stop. Do NOT draw from reserve here.
+      // Deck empty → stop. (Reserve is revealed by _maybeRevealReserveAfterPlay only.)
+      break;
     }
 
     final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
+
+    // Blind pick is possible only when: no deck, no reserve, and they’re below 3.
     final needsBlindPick = ps.inHand.length < 3 && T.deck.isEmpty && ps.reserve.isEmpty && facedown.isNotEmpty;
 
-    // keep counts current for myState()
     ps
       ..stackCount = T.deck.length
       ..reserveCount = ps.reserve.length
@@ -160,6 +166,63 @@ class GameEndpoint extends Endpoint {
     );
   }
 
+  // Future<DrawResult> drawUpToThree(
+  //   Session s, {
+  //   required String gameId,
+  //   required String playerId,
+  // }) async {
+  //   final T = _tables[gameId] ?? (throw Exception('No such game'));
+  //   final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
+  //   if (T.publicState.phase != 'playing') {
+  //     final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
+  //     ps
+  //       ..stackCount = T.deck.length
+  //       ..reserveCount = ps.reserve.length
+  //       ..blindCount = facedown.length;
+  //     return DrawResult(
+  //       changed: false,
+  //       needsBlindPick: false,
+  //       handSize: ps.inHand.length,
+  //       stackCount: ps.stackCount,
+  //       reserveCount: ps.reserveCount,
+  //       blindCount: ps.blindCount,
+  //     );
+  //   }
+  //
+  //   bool changed = false;
+  //
+  //   // Top up to 3: deck (table stack) -> player reserve
+  //   while (ps.inHand.length < 3) {
+  //     if (T.deck.isNotEmpty) {
+  //       ps.inHand.add(T.deck.removeLast());
+  //       changed = true;
+  //       continue;
+  //     }
+  //     break; // No deck cards -> stop. Do NOT draw from reserve here.
+  //   }
+  //
+  //   final facedown = T.hiddenReal[playerId] ?? const <CardModel>[];
+  //   final needsBlindPick = ps.inHand.length < 3 && T.deck.isEmpty && ps.reserve.isEmpty && facedown.isNotEmpty;
+  //
+  //   // keep counts current for myState()
+  //   ps
+  //     ..stackCount = T.deck.length
+  //     ..reserveCount = ps.reserve.length
+  //     ..blindCount = facedown.length;
+  //   _syncCounts(T, playerId);
+  //
+  //   if (changed) s.messages.postMessage(_chan(gameId), T.publicState);
+  //
+  //   return DrawResult(
+  //     changed: changed,
+  //     needsBlindPick: needsBlindPick,
+  //     handSize: ps.inHand.length,
+  //     stackCount: ps.stackCount,
+  //     reserveCount: ps.reserveCount,
+  //     blindCount: ps.blindCount,
+  //   );
+  // }
+
   Future<DrawResult> drawBlindTopDown(
     Session s, {
     required String gameId,
@@ -169,6 +232,11 @@ class GameEndpoint extends Endpoint {
     final T = _tables[gameId] ?? (throw Exception('No such game'));
     final ps = T.playerStates[playerId] ?? (throw Exception('No player'));
     final facedown = T.hiddenReal[playerId] ?? (throw Exception('No facedown'));
+
+    // Only allowed when: deck empty, reserve empty, and you currently have no cards in hand
+    if (T.deck.isNotEmpty || ps.reserve.isNotEmpty || ps.inHand.isNotEmpty) {
+      throw Exception('Blind draw not available yet');
+    }
 
     if (facedown.isEmpty) {
       return DrawResult(
@@ -186,7 +254,7 @@ class GameEndpoint extends Endpoint {
 
     ps.inHand.add(facedown.removeAt(index));
 
-// Try to top-up again ONLY from deck
+    // After blind pick, you may still top-up from DECK only (if somehow cards got put back later)
     while (ps.inHand.length < 3) {
       if (T.deck.isNotEmpty) {
         ps.inHand.add(T.deck.removeLast());
@@ -213,12 +281,13 @@ class GameEndpoint extends Endpoint {
     );
   }
 
-  void _maybeRevealReserveAfterPlay(_TableMem T, String playerId, {required int preHand}) {
+  void _maybeRevealReserveAfterPlay(_TableMem T, String playerId) {
     final ps = T.playerStates[playerId]!;
-    // Condition: deck empty AND hand went from exactly 3 -> 0 by playing
-    final shouldReveal = T.deck.isEmpty && preHand == 3 && ps.inHand.isEmpty && ps.reserve.isNotEmpty;
-    if (shouldReveal) {
-      // Reveal reserve: moves to hand, becomes playable/visible
+    // Reveal condition:
+    // - Deck (stack) is empty
+    // - Player currently has no cards in hand
+    // - Reserve still has the 3 cards
+    if (T.deck.isEmpty && ps.inHand.isEmpty && ps.reserve.isNotEmpty) {
       ps.inHand = List.of(ps.reserve);
       ps.reserve = [];
       _syncCounts(T, playerId);
@@ -241,7 +310,8 @@ class GameEndpoint extends Endpoint {
     final deck = _buildDeck();
     deck.shuffle(Random());
     T.deck = deck;
-
+    T.graveyard.clear();
+    T.publicState.graveyardCount = 0; // NEW
     for (final p in T.publicState.players) {
       final nine = deck.take(9).toList();
       deck.removeRange(0, 9);
@@ -352,7 +422,7 @@ class GameEndpoint extends Endpoint {
     _syncCounts(T, playerId);
 
 // Reveal reserve only if rule is satisfied
-    _maybeRevealReserveAfterPlay(T, playerId, preHand: preHand);
+    _maybeRevealReserveAfterPlay(T, playerId);
 
     // Specials: burn / skip handling
     final res = _applySpecialsAfterPlay(
@@ -435,10 +505,12 @@ class GameEndpoint extends Endpoint {
 
   void _advanceTurnBy(_TableMem T, int steps) {
     final st = T.publicState;
-    if (st.players.isEmpty) return;
     final n = st.players.length;
+    if (n == 0) return;
     final i = st.players.indexOf(st.currentPlayerId ?? '');
-    st.currentPlayerId = st.players[(i + (steps % n)) % n];
+    final d = T.direction;
+    final next = ((i + d * steps) % n + n) % n; // safe modulo for negatives
+    st.currentPlayerId = st.players[next];
   }
 
 // Top-most visible rank (ignores 3 / Joker)
@@ -474,7 +546,13 @@ class GameEndpoint extends Endpoint {
     required int playedCount,
   }) {
     final st = T.publicState;
-
+    if (playedRankNorm == 'Joker') {
+      if (playedCount.isOdd) {
+        T.direction *= -1; // flip once per odd total
+      }
+      // No skip, no burn from Joker itself
+      return const _SpecialsResult(burned: false, skipCount: 0);
+    }
     // Rule 1: Play a 10 -> burn the entire pile (immediate)
     if (playedRankNorm == '10') {
       _burnPile(T);
@@ -499,9 +577,15 @@ class GameEndpoint extends Endpoint {
 
   void _burnPile(_TableMem T) {
     final st = T.publicState;
-    if (st.pile.isEmpty) return;
+    final added = st.pile.length;
+    if (added == 0) return;
+
     T.graveyard.addAll(st.pile);
     st.pile = [];
+
+    // Keep public count in sync (either += added, or pull from T.graveyard.length)
+    st.graveyardCount += added; // fast path
+    // OR: st.graveyardCount = T.graveyard.length;  // canonical path
   }
 
   // Play a card from your hand, validate by rules, advance turn
@@ -530,7 +614,7 @@ class GameEndpoint extends Endpoint {
     st.pile = [...st.pile, card];
 
     _syncCounts(T, playerId);
-    _maybeRevealReserveAfterPlay(T, playerId, preHand: preHand);
+    _maybeRevealReserveAfterPlay(T, playerId);
 
     // Specials
     final res = _applySpecialsAfterPlay(

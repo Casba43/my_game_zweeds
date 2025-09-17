@@ -423,17 +423,30 @@ class _CardTablePageState extends State<CardTablePage> {
               const Text('Pile (latest last):'),
               const SizedBox(height: 8),
               Expanded(
-                child: ListView.builder(
-                  itemCount: _pile.length,
-                  itemBuilder: (_, i) {
-                    final c = _pile[i];
-                    return ListTile(
-                      dense: true,
-                      title: Text('${c.rank}${c.suit}'),
-                    );
-                  },
+                child: Scrollbar(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.only(right: 4, bottom: 8),
+                    child: Wrap(
+                      spacing: 8, // horizontal gap
+                      runSpacing: 8, // vertical gap when wrapping
+                      children: _pile.map((c) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.black26),
+                          ),
+                          child: Text(
+                            '${c.rank}${c.suit}',
+                            style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ),
               ),
+
               if (_loading) const LinearProgressIndicator(),
 
               // ===== Player area =====
@@ -507,10 +520,12 @@ class _CardTablePageState extends State<CardTablePage> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   Chip(label: Text('Draw stack: $_stackCount')),
+                  Chip(label: Text('Graveyard: ${(_state?.graveyardCount) ?? 0}')), // NEW
                   Chip(label: Text('Your reserve: $_reserveCount')),
                   Chip(label: Text('Your facedown: $_blindCount')),
                 ],
               ),
+
               const SizedBox(height: 6),
               // Hand + selection
               const Text('Your hand:'),

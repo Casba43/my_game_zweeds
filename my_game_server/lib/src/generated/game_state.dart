@@ -21,6 +21,7 @@ abstract class GameState
     required this.pile,
     required this.phase,
     required this.drawStackCount,
+    required this.graveyardCount,
   });
 
   factory GameState({
@@ -30,6 +31,7 @@ abstract class GameState
     required List<_i2.CardModel> pile,
     required String phase,
     required int drawStackCount,
+    required int graveyardCount,
   }) = _GameStateImpl;
 
   factory GameState.fromJson(Map<String, dynamic> jsonSerialization) {
@@ -44,6 +46,7 @@ abstract class GameState
           .toList(),
       phase: jsonSerialization['phase'] as String,
       drawStackCount: jsonSerialization['drawStackCount'] as int,
+      graveyardCount: jsonSerialization['graveyardCount'] as int,
     );
   }
 
@@ -59,6 +62,8 @@ abstract class GameState
 
   int drawStackCount;
 
+  int graveyardCount;
+
   /// Returns a shallow copy of this [GameState]
   /// with some or all fields replaced by the given arguments.
   @_i1.useResult
@@ -69,6 +74,7 @@ abstract class GameState
     List<_i2.CardModel>? pile,
     String? phase,
     int? drawStackCount,
+    int? graveyardCount,
   });
   @override
   Map<String, dynamic> toJson() {
@@ -79,6 +85,7 @@ abstract class GameState
       'pile': pile.toJson(valueToJson: (v) => v.toJson()),
       'phase': phase,
       'drawStackCount': drawStackCount,
+      'graveyardCount': graveyardCount,
     };
   }
 
@@ -91,6 +98,7 @@ abstract class GameState
       'pile': pile.toJson(valueToJson: (v) => v.toJsonForProtocol()),
       'phase': phase,
       'drawStackCount': drawStackCount,
+      'graveyardCount': graveyardCount,
     };
   }
 
@@ -110,6 +118,7 @@ class _GameStateImpl extends GameState {
     required List<_i2.CardModel> pile,
     required String phase,
     required int drawStackCount,
+    required int graveyardCount,
   }) : super._(
           gameId: gameId,
           players: players,
@@ -117,6 +126,7 @@ class _GameStateImpl extends GameState {
           pile: pile,
           phase: phase,
           drawStackCount: drawStackCount,
+          graveyardCount: graveyardCount,
         );
 
   /// Returns a shallow copy of this [GameState]
@@ -130,6 +140,7 @@ class _GameStateImpl extends GameState {
     List<_i2.CardModel>? pile,
     String? phase,
     int? drawStackCount,
+    int? graveyardCount,
   }) {
     return GameState(
       gameId: gameId ?? this.gameId,
@@ -139,6 +150,7 @@ class _GameStateImpl extends GameState {
       pile: pile ?? this.pile.map((e0) => e0.copyWith()).toList(),
       phase: phase ?? this.phase,
       drawStackCount: drawStackCount ?? this.drawStackCount,
+      graveyardCount: graveyardCount ?? this.graveyardCount,
     );
   }
 }
